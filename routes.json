@@ -1284,6 +1284,92 @@
       ],
       "fare_kes": 1800,
       "active": true
+    },
+    {
+      "_id": "MP-KLA001",
+      "origin": "Nairobi",
+      "destination": "Kampala",
+      "stops": [
+        "Nakuru",
+        "Eldoret",
+        "Bungoma",
+        "Busia"
+      ],
+      "fare_kes": 3500,
+      "active": true,
+      "addition": true
+    },
+    {
+      "_id": "MP-KLA001-REV",
+      "origin": "Kampala",
+      "destination": "Nairobi",
+      "stops": [
+        "Busia",
+        "Bungoma",
+        "Eldoret",
+        "Nakuru"
+      ],
+      "fare_kes": 3500,
+      "active": true,
+      "addition": true
+    },
+    {
+      "_id": "MP-MLD001",
+      "origin": "Nairobi",
+      "destination": "Malindi",
+      "stops": [
+        "Voi",
+        "Mombasa",
+        "Mtwapa",
+        "Kilifi"
+      ],
+      "fare_kes": 3000,
+      "active": true,
+      "addition": true
+    },
+    {
+      "_id": "MP-MLD001-REV",
+      "origin": "Malindi",
+      "destination": "Nairobi",
+      "stops": [
+        "Kilifi",
+        "Mtwapa",
+        "Mombasa",
+        "Voi"
+      ],
+      "fare_kes": 3000,
+      "active": true,
+      "addition": true
+    },
+    {
+      "_id": "MP-MLB001",
+      "origin": "Mombasa",
+      "destination": "Malaba",
+      "stops": [
+        "Voi",
+        "Nairobi",
+        "Nakuru",
+        "Eldoret",
+        "Webuye"
+      ],
+      "fare_kes": 3000,
+      "active": true,
+      "addition": true
+    },
+    {
+      "_id": "MP-MLB001-REV",
+      "origin": "Malaba",
+      "destination": "Mombasa",
+      "stops": [
+        "Webuye",
+        "Eldoret",
+        "Nakuru",
+        "Nairobi",
+        "Voi"
+      ],
+      "fare_kes": 3000,
+      "active": true,
+      "addition": true
     }
   ]
 }
