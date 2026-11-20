@@ -21,7 +21,7 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, service: "Mash Poa On
 
 let db = null;
 let mongoClient = null;
-const memory = { settings: [], routes: [], schedules: [], bookings: [], chats: [] };
+const memory = { settings: [], routes: [], schedules: [], bookings: [], chats: [] };\nlet aiConfig = { enabled: false, model: "gemini-2.0-flash", notes: "" };
 const col = (name) => db ? db.collection(name) : null;
 async function all(name, sort = {}) { const c=col(name); return c ? c.find({}).sort(sort).toArray() : memory[name]; }
 async function one(name, query) { const c=col(name); return c ? c.findOne(query) : memory[name].find(x=>Object.entries(query).every(([k,v])=>x[k]===v)) || null; }
@@ -45,6 +45,8 @@ app.put("/api/admin/settings",admin,async(req,res)=>{
  const doc={_id:"global",type,number:clip(p.number,40),account:clip(p.account,60),accountName:clip(p.accountName,80)||"Mash Poa",paymentMode,override:Math.max(0,Number(p.override)||0),updatedAt:Date.now()};
  await save("settings",doc); res.json({ok:true,settings:safePayment(doc)});
 });
+app.get("/api/admin/ai-settings",admin,async(_req,res)=>{const d=await one("settings",{_id:"ai"})||aiConfig;res.json({enabled:!!d.enabled,model:d.model||aiConfig.model,notes:d.notes||"",hasKey:!!process.env.GEMINI_API_KEY});});
+app.put("/api/admin/ai-settings",admin,async(req,res)=>{const p=req.body||{};aiConfig={enabled:!!p.enabled,model:clip(p.model,80)||"gemini-2.0-flash",notes:clip(p.notes,3000)};await save("settings",{_id:"ai",...aiConfig});res.json({ok:true,hasKey:!!process.env.GEMINI_API_KEY});});
 app.get("/api/admin/routes",admin,async(_req,res)=>res.json(await all("routes")));
 app.post("/api/admin/routes",admin,async(req,res)=>{
  const p=req.body||{}; const origin=clip(p.origin,80),destination=clip(p.destination,80),fare=Number(p.fare);
@@ -82,16 +84,30 @@ function push(c,msg){msg.id=id();msg.at=Date.now();c.messages.push(msg);c.update
 function publicChat(c){return {_id:c._id,name:c.name,phone:c.phone,bookingRef:c.bookingRef,unread:c.unread||0,updatedAt:c.updatedAt,messages:c.messages};}
 const agents=io.of("/agent");
 agents.use((socket,next)=>socket.handshake.auth?.password&&ADMIN_PASSWORD&&socket.handshake.auth.password===ADMIN_PASSWORD?next():next(new Error("Wrong password")));
+async function replyWithAI(c) {
+ if(!aiConfig.enabled||!process.env.GEMINI_API_KEY)return;
+ const last=c.messages[c.messages.length-1]; if(!last||last.from!=="customer")return;
+ try {
+  const [routes,schedules,payment]=await Promise.all([all("routes"),all("schedules"),one("settings",{_id:"global"})]);
+  const system="You are the Mash Poa Online Booking assistant. Be concise, polite and helpful. Only state routes, departure times and fares found in the supplied current Mash Poa data. If a route/departure is missing, say staff must confirm it. Never invent seats, fares, booking status, payment receipt or ticket numbers. Never say an M-Pesa STK Push was sent unless an authorized staff member has explicitly initiated it. Never ask for an M-Pesa PIN or password. A booking is not paid until the backend/admin verifies it.\nROUTES: "+JSON.stringify(routes)+"\nSCHEDULES: "+JSON.stringify(schedules)+"\nPAYMENT WORKFLOW: "+JSON.stringify(safePayment(payment))+"\nADMIN NOTES: "+aiConfig.notes+"\nIf paymentMode is admin, tell the customer an agent will send official payment instructions. If details are provided in automatic mode, repeat only the configured number/account and name.";
+  const history=c.messages.slice(-12).map(m=>({role:m.from==="customer"?"user":"model",parts:[{text:clip(m.text,1200)}]}));
+  const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(aiConfig.model)+":generateContent?key="+encodeURIComponent(process.env.GEMINI_API_KEY),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:history,generationConfig:{temperature:0.25,maxOutputTokens:450}})});
+  const data=await response.json(); if(!response.ok)throw new Error(data.error?.message||"AI request failed");
+  const answer=(data.candidates?.[0]?.content?.parts||[]).map(x=>x.text||"").join("").trim();
+  if(answer&&c.messages[c.messages.length-1].id===last.id)push(c,{from:"agent",text:answer,ai:true});
+ } catch(e){console.error("Mash Poa AI:",e.message);}
+}
 agents.on("connection",socket=>{
  socket.emit("chats",Array.from(chats.values()).map(publicChat));
  socket.on("chat:read",async chatId=>{const c=chats.get(chatId);if(c){c.unread=0;await persistChat(c);agents.emit("chat:update",publicChat(c));}});
  socket.on("agent:reply",p=>{const c=chats.get(p?.chatId);const msg=clip(p?.text,2000);if(c&&msg)push(c,{from:"agent",text:msg});});
+ socket.on("agent:stk-initiated",p=>{const c=chats.get(p?.chatId);if(c&&c.bookingRef)push(c,{from:"agent",type:"status",text:"An authorized Mash Poa agent has confirmed that the M-Pesa STK Push was initiated. Please check your phone. This message does not itself confirm payment."});});
  socket.on("agent:payment",p=>{const c=chats.get(p?.chatId);if(!c)return;one("settings",{_id:"global"}).then(s=>{const pay=safePayment(s);if(!pay.number)return socket.emit("agent:error","Save the global payment number in Admin Settings first.");push(c,{from:"agent",type:"payment",payment:{...pay,amount:Number(p.amount)||0,bookingRef:c.bookingRef},text:"Official payment instructions"});});});
  socket.on("agent:paid",async p=>{const c=chats.get(p?.chatId);if(!c)return;const b=await one("bookings",{ref:clip(p.ref,40)});if(!b||b.status==="paid")return; b.status="paid";b.paidAt=Date.now();await save("bookings",b);const ticket={ticketNo:"MP-"+crypto.randomBytes(4).toString("hex").toUpperCase(),ref:b.ref,passengers:b.passengers,from:b.from,to:b.to,date:b.date,time:b.time,seats:b.seats,amount:b.amount,bus:b.bus};push(c,{from:"agent",type:"ticket",ticket,text:"Your payment has been verified. Your Mash Poa ticket is ready."});});
 });
 io.on("connection",socket=>{
  socket.on("customer:start",async p=>{const phone=clip(p?.phone,20),name=clip(p?.name,100);if(!phone)return;let c=Array.from(chats.values()).find(x=>x.phone===phone&&x.bookingRef===clip(p?.bookingRef,40));if(!c){c={_id:id(),name:name||"Guest",phone,bookingRef:clip(p?.bookingRef,40),messages:[],unread:0,createdAt:Date.now(),updatedAt:Date.now()};chats.set(c._id,c);await persistChat(c);}socket.join(c._id);socket.emit("chat:ready",{chatId:c._id,messages:c.messages});});
- socket.on("customer:message",p=>{const c=chats.get(clip(p?.chatId,40));const message=clip(p?.text,1500);if(c&&message){push(c,{from:"customer",text:message});}});
+ socket.on("customer:message",p=>{const c=chats.get(clip(p?.chatId,40));const message=clip(p?.text,1500);if(c&&message){push(c,{from:"customer",text:message});replyWithAI(c);}});
  socket.on("customer:booking",p=>{const c=chats.get(clip(p?.chatId,40));const ref=clip(p?.ref,40);if(c&&ref){c.bookingRef=ref;push(c,{from:"customer",type:"booking",booking:{ref,from:clip(p.from,80),to:clip(p.to,80),date:clip(p.date,10),time:clip(p.time,10),seats:clip((p.seats||[]).join(", "),40),amount:Number(p.amount)||0},text:"Booking request "+ref});}});
 });
 (async()=>{if(process.env.MONGODB_URI){try{mongoClient=new MongoClient(process.env.MONGODB_URI,{serverSelectionTimeoutMS:10000});await mongoClient.connect();db=mongoClient.db(DB_NAME);console.log("Mash Poa database connected");}catch(e){console.error("MongoDB unavailable; running in memory until restart:",e.message);}}await loadChats();server.listen(PORT,()=>console.log("Mash Poa listening on "+PORT));})();
