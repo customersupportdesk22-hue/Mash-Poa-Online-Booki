@@ -6,7 +6,8 @@ $("#swap-route").addEventListener("click",()=>{const a=$("#origin"),b=$("#destin
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 const results=document.createElement("section");results.id="journey-results";results.style.cssText="max-width:1064px;margin:0 auto 36px;padding:0 18px";$("#book").appendChild(results);
 $("#route-form").addEventListener("submit",async e=>{
- e.preventDefault();const from=$("#origin").value.trim(),to=$("#destination").value.trim(),date=dateInput.value,feedback=$("#form-feedback");\n if($("#trip-type").value==="return"){feedback.textContent="Return-trip booking is not yet enabled. Please select One way or contact Mash Poa support.";return;}
+ e.preventDefault();const from=$("#origin").value.trim(),to=$("#destination").value.trim(),date=dateInput.value,feedback=$("#form-feedback");
+ if($("#trip-type").value==="return"){feedback.textContent="Return-trip booking is not yet enabled. Please select One way or contact Mash Poa support.";return;}
  if(from.toLowerCase()===to.toLowerCase()){feedback.textContent="Choose two different locations for your journey.";return;}
  feedback.textContent="Checking Mash Poa departures…";results.innerHTML="";
  try{const r=await fetch("/api/schedules?"+new URLSearchParams({from,to,date}));const trips=await r.json();if(!r.ok)throw Error(trips.error||"Could not search departures.");
