@@ -86,9 +86,9 @@ function push(c,msg){msg.id=id();msg.at=Date.now();c.messages.push(msg);c.update
 function publicChat(c){return {_id:c._id,name:c.name,phone:c.phone,bookingRef:c.bookingRef,unread:c.unread||0,updatedAt:c.updatedAt,messages:c.messages};}
 const agents=io.of("/agent");
 agents.use((socket,next)=>socket.handshake.auth?.password&&ADMIN_PASSWORD&&socket.handshake.auth.password===ADMIN_PASSWORD?next():next(new Error("Wrong password")));
-async function replyWithAI(c) {
+const humanActivity = new Map();\nasync function replyWithAI(c) {
  if(!aiConfig.enabled||!process.env.GEMINI_API_KEY)return;
- const last=c.messages[c.messages.length-1]; if(!last||last.from!=="customer")return;
+ const last=c.messages[c.messages.length-1]; if(!last||last.from!=="customer")return; if(Date.now()-(humanActivity.get(c._id)||0)<10*60*1000)return;
  try {
   const [routes,schedules,payment]=await Promise.all([all("routes"),all("schedules"),one("settings",{_id:"global"})]);
   const system="You are the Mash Poa Online Booking assistant. Be concise, polite and helpful. Only state routes, departure times and fares found in the supplied current Mash Poa data. If a route/departure is missing, say staff must confirm it. Never invent seats, fares, booking status, payment receipt or ticket numbers. Never say an M-Pesa STK Push was sent unless an authorized staff member has explicitly initiated it. Never ask for an M-Pesa PIN or password. A booking is not paid until the backend/admin verifies it.\nROUTES: "+JSON.stringify(routes)+"\\nSCHEDULES: "+JSON.stringify(schedules)+"\\nPAYMENT WORKFLOW: "+JSON.stringify(safePayment(payment))+"\\nADMIN NOTES: "+aiConfig.notes+"\\nIf paymentMode is admin, tell the customer an agent will send official payment instructions. If details are provided in automatic mode, repeat only the configured number/account and name.";
@@ -102,10 +102,10 @@ async function replyWithAI(c) {
 agents.on("connection",socket=>{
  socket.emit("chats",Array.from(chats.values()).map(publicChat));
  socket.on("chat:read",async chatId=>{const c=chats.get(chatId);if(c){c.unread=0;await persistChat(c);agents.emit("chat:update",publicChat(c));}});
- socket.on("agent:reply",p=>{const c=chats.get(p?.chatId);const msg=clip(p?.text,2000);if(c&&msg)push(c,{from:"agent",text:msg});});
- socket.on("agent:stk-initiated",p=>{const c=chats.get(p?.chatId);if(c&&c.bookingRef)push(c,{from:"agent",type:"status",text:"An authorized Mash Poa agent has confirmed that the M-Pesa STK Push was initiated. Please check your phone. This message does not itself confirm payment."});});
+ socket.on("agent:reply",p=>{const c=chats.get(p?.chatId);const msg=clip(p?.text,2000);if(c&&msg){humanActivity.set(c._id,Date.now());push(c,{from:"agent",text:msg});}});
+ socket.on("agent:stk-initiated",p=>{const c=chats.get(p?.chatId);if(c&&c.bookingRef){humanActivity.set(c._id,Date.now());push(c,{from:"agent",type:"status",text:"An authorized Mash Poa agent has confirmed that the M-Pesa STK Push was initiated. Please check your phone. This message does not itself confirm payment."});}});
  socket.on("agent:payment",p=>{const c=chats.get(p?.chatId);if(!c)return;one("settings",{_id:"global"}).then(s=>{const pay=safePayment(s);if(!pay.number)return socket.emit("agent:error","Save the global payment number in Admin Settings first.");push(c,{from:"agent",type:"payment",payment:{...pay,amount:Number(p.amount)||0,bookingRef:c.bookingRef},text:"Official payment instructions"});});});
- socket.on("agent:paid",async p=>{const c=chats.get(p?.chatId);if(!c)return;const b=await one("bookings",{ref:clip(p.ref,40)});if(!b||b.status==="paid")return; b.status="paid";b.paidAt=Date.now();await save("bookings",b);const ticket={ticketNo:"MP-"+crypto.randomBytes(4).toString("hex").toUpperCase(),ref:b.ref,passengers:b.passengers,from:b.from,to:b.to,date:b.date,time:b.time,seats:b.seats,amount:b.amount,bus:b.bus};push(c,{from:"agent",type:"ticket",ticket,text:"Your payment has been verified. Your Mash Poa ticket is ready."});});
+ socket.on("agent:paid",async p=>{const c=chats.get(p?.chatId);if(!c)return;const b=await one("bookings",{ref:clip(p.ref,40)});if(!b||b.status==="paid")return; humanActivity.set(c._id,Date.now()); b.status="paid";b.paidAt=Date.now();await save("bookings",b);const ticket={ticketNo:"MP-"+crypto.randomBytes(4).toString("hex").toUpperCase(),ref:b.ref,passengers:b.passengers,from:b.from,to:b.to,date:b.date,time:b.time,seats:b.seats,amount:b.amount,bus:b.bus};push(c,{from:"agent",type:"ticket",ticket,text:"Your payment has been verified. Your Mash Poa ticket is ready."});});
 });
 io.on("connection",socket=>{
  socket.on("customer:start",async p=>{const phone=clip(p?.phone,20),name=clip(p?.name,100);if(!phone)return;let c=Array.from(chats.values()).find(x=>x.phone===phone&&x.bookingRef===clip(p?.bookingRef,40));if(!c){c={_id:id(),name:name||"Guest",phone,bookingRef:clip(p?.bookingRef,40),messages:[],unread:0,createdAt:Date.now(),updatedAt:Date.now()};chats.set(c._id,c);await persistChat(c);}socket.join(c._id);socket.emit("chat:ready",{chatId:c._id,messages:c.messages});});
