@@ -21,7 +21,7 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, service: "Mash Poa On
 
 let db = null;
 let mongoClient = null;
-const memory = { settings: {}, routes: [], schedules: [], bookings: [], chats: [] };
+const memory = { settings: [], routes: [], schedules: [], bookings: [], chats: [] };
 const col = (name) => db ? db.collection(name) : null;
 async function all(name, sort = {}) { const c=col(name); return c ? c.find({}).sort(sort).toArray() : memory[name]; }
 async function one(name, query) { const c=col(name); return c ? c.findOne(query) : memory[name].find(x=>Object.entries(query).every(([k,v])=>x[k]===v)) || null; }
@@ -86,7 +86,7 @@ agents.on("connection",socket=>{
  socket.emit("chats",Array.from(chats.values()).map(publicChat));
  socket.on("chat:read",async chatId=>{const c=chats.get(chatId);if(c){c.unread=0;await persistChat(c);agents.emit("chat:update",publicChat(c));}});
  socket.on("agent:reply",p=>{const c=chats.get(p?.chatId);const msg=clip(p?.text,2000);if(c&&msg)push(c,{from:"agent",text:msg});});
- socket.on("agent:payment",p=>{const c=chats.get(p?.chatId);if(!c)return;const settings=safePayment(memory.settings.find(x=>x._id==="global")||{});one("settings",{_id:"global"}).then(s=>{const pay=safePayment(s);if(!pay.number)return socket.emit("agent:error","Save the global payment number in Admin Settings first.");push(c,{from:"agent",type:"payment",payment:{...pay,amount:Number(p.amount)||0,bookingRef:c.bookingRef},text:"Official payment instructions"});});});
+ socket.on("agent:payment",p=>{const c=chats.get(p?.chatId);if(!c)return;one("settings",{_id:"global"}).then(s=>{const pay=safePayment(s);if(!pay.number)return socket.emit("agent:error","Save the global payment number in Admin Settings first.");push(c,{from:"agent",type:"payment",payment:{...pay,amount:Number(p.amount)||0,bookingRef:c.bookingRef},text:"Official payment instructions"});});});
  socket.on("agent:paid",async p=>{const c=chats.get(p?.chatId);if(!c)return;const b=await one("bookings",{ref:clip(p.ref,40)});if(!b||b.status==="paid")return; b.status="paid";b.paidAt=Date.now();await save("bookings",b);const ticket={ticketNo:"MP-"+crypto.randomBytes(4).toString("hex").toUpperCase(),ref:b.ref,passengers:b.passengers,from:b.from,to:b.to,date:b.date,time:b.time,seats:b.seats,amount:b.amount,bus:b.bus};push(c,{from:"agent",type:"ticket",ticket,text:"Your payment has been verified. Your Mash Poa ticket is ready."});});
 });
 io.on("connection",socket=>{
