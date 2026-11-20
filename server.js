@@ -21,7 +21,8 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, service: "Mash Poa On
 
 let db = null;
 let mongoClient = null;
-const memory = { settings: [], routes: [], schedules: [], bookings: [], chats: [] };\nlet aiConfig = { enabled: false, model: "gemini-2.0-flash", notes: "" };
+const memory = { settings: [], routes: [], schedules: [], bookings: [], chats: [] };
+let aiConfig = { enabled: false, model: "gemini-2.0-flash", notes: "" };
 const col = (name) => db ? db.collection(name) : null;
 async function all(name, sort = {}) { const c=col(name); return c ? c.find({}).sort(sort).toArray() : memory[name]; }
 async function one(name, query) { const c=col(name); return c ? c.findOne(query) : memory[name].find(x=>Object.entries(query).every(([k,v])=>x[k]===v)) || null; }
