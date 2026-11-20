@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
-  <script src="/app.js" defer></script>
+  <script src="/socket.io/socket.io.js"></script>\n  <script src="/chat-widget.js" defer></script>\n  <script src="/app.js" defer></script>
 </head>
 <body>
   <div class="announcement"><span class="live-dot"></span> Travel with confidence · Mash Poa Online Booking</div>
@@ -20,9 +20,9 @@
       <span class="brand-copy"><strong>MASH POA</strong><small>TRAVEL WITH EASE</small></span>
     </a>
     <nav class="desktop-nav" aria-label="Main navigation">
-      <a href="#book">Book a trip</a><a href="#why-us">Why Mash Poa</a><a href="#help">Help</a>
+      <a href="#book">Book a trip</a><a href="#why-us">Why Mash Poa</a><a href="#help">Help</a><a href="/admin.html">Admin</a>
     </nav>
-    <a class="header-help" href="#help"><span>Need help?</span><strong>Talk to us ↗</strong></a>
+    <a class="header-help" href="/agent.html"><span>Need help?</span><strong>Talk to us ↗</strong></a>
   </header>
 
   <main>
@@ -83,7 +83,7 @@
   <div class="chat-backdrop" id="chat-backdrop" hidden></div>
   <aside class="chat-panel" id="chat-panel" aria-label="Booking support" aria-hidden="true">
     <div class="chat-top"><div class="chat-avatar">MP</div><div><strong>Mash Poa Support</strong><small><span class="live-dot"></span> Booking assistance</small></div><button id="close-chat" type="button" aria-label="Close support">×</button></div>
-    <div class="chat-content"><div class="assistant-bubble"><strong>Karibu to Mash Poa!</strong><p>Our booking support channel is being connected. You can still review your route details on this page. We will not claim a payment or booking is confirmed until the relevant systems verify it.</p></div><p class="chat-hint">Live AI chat integration is not yet configured.</p></div>
+    <div class="chat-content"><div class="assistant-bubble"><strong>Karibu to Mash Poa!</strong><p>Our booking support channel is being connected. You can still review your route details on this page. We will not claim a payment or booking is confirmed until the relevant systems verify it.</p></div><p class="chat-hint">Mash Poa support chat is available. Start a conversation to reach the booking team.</p></div>
     <div class="chat-compose"><input id="chat-message" placeholder="Chat service not connected" disabled><button type="button" disabled>↑</button></div>
   </aside>
 </body>
