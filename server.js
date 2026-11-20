@@ -86,7 +86,8 @@ function push(c,msg){msg.id=id();msg.at=Date.now();c.messages.push(msg);c.update
 function publicChat(c){return {_id:c._id,name:c.name,phone:c.phone,bookingRef:c.bookingRef,unread:c.unread||0,updatedAt:c.updatedAt,messages:c.messages};}
 const agents=io.of("/agent");
 agents.use((socket,next)=>socket.handshake.auth?.password&&ADMIN_PASSWORD&&socket.handshake.auth.password===ADMIN_PASSWORD?next():next(new Error("Wrong password")));
-const humanActivity = new Map();\nasync function replyWithAI(c) {
+const humanActivity = new Map();
+async function replyWithAI(c) {
  if(!aiConfig.enabled||!process.env.GEMINI_API_KEY)return;
  const last=c.messages[c.messages.length-1]; if(!last||last.from!=="customer")return; if(Date.now()-(humanActivity.get(c._id)||0)<10*60*1000)return;
  try {
