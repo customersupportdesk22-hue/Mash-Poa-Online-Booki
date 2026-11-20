@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102d26">
+  <meta name="description" content="Mash Poa coach travel booking. Find your journey and plan your trip.">
+  <title>Mash Poa | Online Booking</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="announcement"><span class="live-dot"></span> Travel with confidence · Mash Poa Online Booking</div>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Mash Poa home">
+      <span class="brand-mark">MP</span>
+      <span class="brand-copy"><strong>MASH POA</strong><small>TRAVEL WITH EASE</small></span>
+    </a>
+    <nav class="desktop-nav" aria-label="Main navigation">
+      <a href="#book">Book a trip</a><a href="#why-us">Why Mash Poa</a><a href="#help">Help</a>
+    </nav>
+    <a class="header-help" href="#help"><span>Need help?</span><strong>Talk to us ↗</strong></a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-shade"></div>
+      <div class="hero-content">
+        <div class="eyebrow"><span></span> YOUR JOURNEY, MADE SIMPLE</div>
+        <h1>Good journeys<br>start <em>right here.</em></h1>
+        <p>Plan your trip, choose your seat and get ready to travel. A smoother way to book your Mash Poa journey.</p>
+        <a class="hero-link" href="#book">Plan your journey <span>↓</span></a>
+      </div>
+      <div class="hero-note"><span class="note-icon">✦</span><span><strong>Every journey matters</strong><small>Book with clarity and confidence</small></span></div>
+    </section>
+
+    <section class="booking-wrap" id="book">
+      <div class="booking-heading">
+        <div><span class="section-kicker">LET'S GET YOU MOVING</span><h2>Where are you headed?</h2></div>
+        <span class="secure-label">⌑ &nbsp; Secure booking experience</span>
+      </div>
+      <form class="search-card" id="route-form">
+        <div class="field-group">
+          <label for="origin">FROM</label>
+          <div class="field-control"><span class="field-symbol origin-symbol">●</span><input id="origin" name="origin" placeholder="Departure city" autocomplete="off" required></div>
+        </div>
+        <button class="swap-button" type="button" id="swap-route" aria-label="Swap departure and destination">⇄</button>
+        <div class="field-group">
+          <label for="destination">TO</label>
+          <div class="field-control"><span class="field-symbol destination-symbol">●</span><input id="destination" name="destination" placeholder="Destination city" autocomplete="off" required></div>
+        </div>
+        <div class="field-group date-field">
+          <label for="travel-date">TRAVEL DATE</label>
+          <div class="field-control"><span class="field-symbol">▦</span><input id="travel-date" name="travelDate" type="date" required></div>
+        </div>
+        <div class="field-group trip-field">
+          <label for="trip-type">TRIP TYPE</label>
+          <div class="field-control"><span class="field-symbol">↔</span><select id="trip-type" name="tripType"><option value="one-way">One way</option><option value="return">Return</option></select></div>
+        </div>
+        <button class="search-button" type="submit">Find a bus <span>→</span></button>
+      </form>
+      <div class="form-feedback" id="form-feedback" role="status" aria-live="polite"></div>
+      <div class="trust-row"><span>✓ Clear journey details</span><span>✓ Seat selection flow</span><span>✓ M-PESA-ready checkout</span></div>
+    </section>
+
+    <section class="benefits" id="why-us">
+      <div class="benefit-intro"><span class="section-kicker">THE MASH POA WAY</span><h2>Less hassle.<br><em>More journey.</em></h2><p>Your travel plans deserve a booking experience that is simple, clear and thoughtfully designed.</p></div>
+      <article class="benefit-card"><span class="benefit-icon">⌖</span><h3>Choose your journey</h3><p>Enter your route and travel date to find the right trip once live schedules are connected.</p><span class="card-number">01</span></article>
+      <article class="benefit-card"><span class="benefit-icon">▦</span><h3>Your seat, your choice</h3><p>A clear seat map will make it easy to review available seats before you confirm.</p><span class="card-number">02</span></article>
+      <article class="benefit-card"><span class="benefit-icon">◈</span><h3>Guided checkout</h3><p>Continue with the booking assistant for payment guidance and confirmation.</p><span class="card-number">03</span></article>
+    </section>
+
+    <section class="help-strip" id="help">
+      <div><span class="section-kicker">WE'RE HERE TO HELP</span><h2>Questions about your trip?</h2><p>Our booking support team will guide you through the process.</p></div>
+      <button class="outline-button" id="open-help" type="button">Open booking support <span>↗</span></button>
+    </section>
+  </main>
+  <footer><a class="brand footer-brand" href="/"><span class="brand-mark">MP</span><span class="brand-copy"><strong>MASH POA</strong><small>TRAVEL WITH EASE</small></span></a><span>© <span id="year"></span> Mash Poa. All rights reserved.</span><span>Online booking</span></footer>
+
+  <div class="chat-backdrop" id="chat-backdrop" hidden></div>
+  <aside class="chat-panel" id="chat-panel" aria-label="Booking support" aria-hidden="true">
+    <div class="chat-top"><div class="chat-avatar">MP</div><div><strong>Mash Poa Support</strong><small><span class="live-dot"></span> Booking assistance</small></div><button id="close-chat" type="button" aria-label="Close support">×</button></div>
+    <div class="chat-content"><div class="assistant-bubble"><strong>Karibu to Mash Poa!</strong><p>Our booking support channel is being connected. You can still review your route details on this page. We will not claim a payment or booking is confirmed until the relevant systems verify it.</p></div><p class="chat-hint">Live AI chat integration is not yet configured.</p></div>
+    <div class="chat-compose"><input id="chat-message" placeholder="Chat service not connected" disabled><button type="button" disabled>↑</button></div>
+  </aside>
+</body>
+</html>
