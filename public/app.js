@@ -1,34 +1,317 @@
-const $ = (selector) => document.querySelector(selector);
-const dateInput=$("#travel-date");
-const now=new Date();const today=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
-dateInput.min=today;dateInput.value=today;$("#year").textContent=new Date().getFullYear();
-$("#swap-route").addEventListener("click",()=>{const a=$("#origin"),b=$("#destination");[a.value,b.value]=[b.value,a.value]});
-function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-const results=document.createElement("section");results.id="journey-results";results.style.cssText="max-width:1064px;margin:0 auto 36px;padding:0 18px";$("#book").appendChild(results);
-$("#route-form").addEventListener("submit",async e=>{
- e.preventDefault();const from=$("#origin").value.trim(),to=$("#destination").value.trim(),date=dateInput.value,feedback=$("#form-feedback");
- if($("#trip-type").value==="return"){feedback.textContent="Return-trip booking is not yet enabled. Please select One way or contact Mash Poa support.";return;}
- if(from.toLowerCase()===to.toLowerCase()){feedback.textContent="Choose two different locations for your journey.";return;}
- feedback.textContent="Checking Mash Poa departures…";results.innerHTML="";
- try{const r=await fetch("/api/schedules?"+new URLSearchParams({from,to,date}));const trips=await r.json();if(!r.ok)throw Error(trips.error||"Could not search departures.");
- if(!trips.length){feedback.textContent="No Mash Poa departures are published for this route and date yet. Please contact support or check another date.";return;}
- feedback.textContent=trips.length+" departure(s) found.";results.innerHTML='<h2 style="font:800 22px Manrope,sans-serif;color:#102d26;margin:16px 0">Available Mash Poa departures</h2>'+trips.map(t=>'<article style="background:#fff;border:1px solid #e5e9e2;border-radius:13px;padding:17px;margin:10px 0;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><b>'+esc(t.time)+' · '+esc(t.bus)+'</b><div style="font-size:12px;color:#718079;margin-top:5px">'+esc(t.route.origin)+' → '+esc(t.route.destination)+' · '+esc(t.date)+'</div><div style="font-size:12px;color:#55764c;margin-top:5px">'+t.availableSeats+' seats available</div></div><div style="text-align:right"><b style="color:#19483a">KES '+Number(t.fare_kes).toLocaleString()+'</b><div><button type="button" data-schedule="'+esc(t._id)+'" style="margin-top:8px;background:#102d26;color:#fff;border:0;border-radius:8px;padding:11px 15px;font-weight:700">Choose seats →</button></div></div></article>').join("");
- results.querySelectorAll("[data-schedule]").forEach(btn=>btn.addEventListener("click",()=>book(trips.find(t=>t._id===btn.dataset.schedule))));
- }catch(err){feedback.textContent=err.message||"We could not reach the booking service.";}
-});
-let selectedTrip=null,selectedSeats=new Set();
-const modalStyle=document.createElement("style");modalStyle.textContent=`
-#mp-booking-dialog{width:min(620px,calc(100vw - 24px));max-height:90dvh;border:0;border-radius:18px;padding:0;box-shadow:0 24px 70px #102d2640;color:#17231f}#mp-booking-dialog::backdrop{background:#081a15aa}#mp-booking-dialog form{padding:20px;overflow:auto;max-height:90dvh}#mp-booking-dialog h2{font:800 22px Manrope,sans-serif;color:#102d26;margin:0 0 8px}#mp-booking-dialog .mp-sub{font-size:12px;color:#718079;margin-bottom:16px}#mp-booking-dialog .mp-seat-grid{display:grid;grid-template-columns:repeat(5,minmax(38px,1fr));gap:7px;margin:12px 0 18px}#mp-booking-dialog .mp-seat{padding:10px 4px;border:1px solid #b7c7ad;border-radius:8px;background:#eff5e9;color:#315a36;font-weight:700}#mp-booking-dialog .mp-seat.chosen{background:#102d26;color:#c7e36b;border-color:#102d26}#mp-booking-dialog .mp-seat:disabled{background:#e2e5e1;color:#929b94;border-color:#e2e5e1;text-decoration:line-through}#mp-booking-dialog label{display:block;font-size:11px;font-weight:700;color:#718079;margin:10px 0 5px}#mp-booking-dialog input,#mp-booking-dialog select{width:100%;padding:12px;border:1px solid #dce4d8;border-radius:8px;font:13px system-ui}#mp-booking-dialog .mp-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}#mp-booking-dialog button{cursor:pointer}#mp-booking-dialog .mp-primary{background:#102d26;color:#c7e36b;border:0;border-radius:8px;padding:12px 16px;font-weight:800}#mp-booking-dialog .mp-secondary{background:#fff;color:#102d26;border:1px solid #dce4d8;border-radius:8px;padding:12px 16px;font-weight:700}
-`;document.head.appendChild(modalStyle);
-const dialog=document.createElement("dialog");dialog.id="mp-booking-dialog";dialog.innerHTML='<form id="mp-booking-form"><h2>Complete your Mash Poa booking</h2><div id="mp-trip-summary" class="mp-sub"></div><label for="mp-count">NUMBER OF PASSENGERS</label><select id="mp-count"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select><label>CHOOSE YOUR SEATS</label><div class="mp-sub">Green seats are available. Grey seats are already booked.</div><div class="mp-seat-grid" id="mp-seats"></div><div id="mp-passengers"></div><label for="mp-phone">CONTACT PHONE NUMBER</label><input id="mp-phone" type="tel" placeholder="e.g. 07XXXXXXXX" required><div class="mp-actions"><button type="button" class="mp-secondary" id="mp-cancel">Cancel</button><button type="submit" class="mp-primary">Create booking →</button></div><p id="mp-booking-error" class="mp-sub" role="status"></p></form>';document.body.appendChild(dialog);
-function drawPassengers(){const n=Number($("#mp-count").value);$("#mp-passengers").innerHTML=Array.from({length:n},(_,i)=>'<label>PASSENGER '+(i+1)+' FULL NAME</label><input class="mp-passenger-name" required maxlength="100" placeholder="Passenger '+(i+1)+' name">').join("");drawSeats();}
-function drawSeats(){if(!selectedTrip)return;const n=Number($("#mp-count").value);$("#mp-seats").innerHTML=Array.from({length:selectedTrip.capacity},(_,i)=>{const seat=String(i+1),taken=selectedTrip.takenSeats.includes(seat),chosen=selectedSeats.has(seat);return '<button type="button" class="mp-seat '+(chosen?'chosen':'')+'" data-seat="'+seat+'" '+(taken?'disabled':'')+'>'+seat+'</button>'}).join("");$("#mp-seats").querySelectorAll("[data-seat]").forEach(b=>b.onclick=()=>{const seat=b.dataset.seat;if(selectedSeats.has(seat))selectedSeats.delete(seat);else if(selectedSeats.size<Number($("#mp-count").value))selectedSeats.add(seat);else{$("#mp-booking-error").textContent="You can select only "+$("#mp-count").value+" seats.";return;}$("#mp-booking-error").textContent="";drawSeats();});}
-$("#mp-count").onchange=()=>{selectedSeats.clear();drawPassengers();};
-$("#mp-cancel").onclick=()=>dialog.close();
-$("#mp-booking-form").onsubmit=async e=>{e.preventDefault();const n=Number($("#mp-count").value),names=[...document.querySelectorAll(".mp-passenger-name")].map(x=>x.value.trim()),phone=$("#mp-phone").value.trim();if(selectedSeats.size!==n){$("#mp-booking-error").textContent="Please select exactly "+n+" available seats.";return;}if(names.some(x=>!x)||!phone){$("#mp-booking-error").textContent="Enter every passenger name and a contact phone number.";return;}const btn=$("#mp-booking-form").querySelector('[type="submit"]');btn.disabled=true;btn.textContent="Creating booking…";try{const passengers=names.map(name=>({name,phone}));const response=await fetch("/api/bookings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({routeId:selectedTrip.route._id,scheduleId:selectedTrip._id,seats:[...selectedSeats],passengers})});const data=await response.json();if(!response.ok)throw Error(data.error||"Could not create booking.");const b=data.booking;dialog.close();alert("Booking request "+b.ref+" created. Continue in Mash Poa support chat for payment instructions. Your ticket is not confirmed until payment is verified.");window.dispatchEvent(new CustomEvent("mashpoa:booking",{detail:{ref:b.ref,name:passengers[0].name,phone,from:b.from,to:b.to,date:b.date,time:b.time,seats:b.seats,amount:b.amount}}));}catch(err){$("#mp-booking-error").textContent=err.message;}finally{btn.disabled=false;btn.textContent="Create booking →";}};
-function book(t){if(!t||!t.availableSeats){alert("This departure has no seats available.");return;}selectedTrip=t;selectedSeats.clear();$("#mp-trip-summary").textContent=t.route.origin+" → "+t.route.destination+" · "+t.date+" at "+t.time+" · KES "+Number(t.fare_kes).toLocaleString()+" per passenger";$("#mp-count").value="1";$("#mp-phone").value="";$("#mp-booking-error").textContent="";drawPassengers();dialog.showModal();}
-const panel=$("#chat-panel"),backdrop=$("#chat-backdrop");
-function openSupport(){if(window.MashPoaChat){const b=$("#mp-chat-launch");if(b)b.click();}else{panel.classList.add("open");panel.setAttribute("aria-hidden","false");backdrop.hidden=false;}}
-function closeSupport(){panel.classList.remove("open");panel.setAttribute("aria-hidden","true");backdrop.hidden=true;}
-$("#open-help").addEventListener("click",openSupport);$("#close-chat").addEventListener("click",closeSupport);backdrop.addEventListener("click",closeSupport);
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSupport();});
+(() => {
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ksh = n => "Ksh " + Number(n || 0).toLocaleString("en-KE");
+const app = $("#app");
+const store = {
+  get(k) { try { return JSON.parse(sessionStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { sessionStorage.removeItem(k); } catch {} }
+};
+const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+const todayIso = () => iso(new Date());
+const addDays = (s, n) => { const d = new Date(s + "T12:00:00"); d.setDate(d.getDate() + n); return iso(d); };
+const dayName = s => s === todayIso() ? "Today" : s === addDays(todayIso(), 1) ? "Tomorrow" : new Date(s + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short" });
+const longDate = s => new Date(s + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).replace(",", "");
+const mins = t => { const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec(String(t || "").trim()); if (!m) return 0; let h = Number(m[1]) % 12; if ((m[3] || "").toUpperCase() === "PM") h += 12; return h * 60 + Number(m[2]); };
+const ico = {
+  pin: c => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2"><path d="M12 21s7-5.5 7-11a7 7 0 10-14 0c0 5.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>`,
+  cal: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e3221c" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>`
+};
+
+let cfg = null;
+async function routes() {
+  if (!cfg) { const r = await fetch("/api/booking-config"); cfg = await r.json(); }
+  return (cfg.routes || []).filter(r => r.active !== false);
+}
+
+/* ---------- router ---------- */
+function go(url, replace) { history[replace ? "replaceState" : "pushState"]({}, "", url); render(); window.scrollTo(0, 0); }
+document.addEventListener("click", e => { const a = e.target.closest("a[data-link]"); if (a) { e.preventDefault(); $("#menu").hidden = true; go(a.getAttribute("href")); } });
+window.addEventListener("popstate", render);
+$("#menu-btn").onclick = () => { const m = $("#menu"); m.hidden = !m.hidden; };
+document.addEventListener("click", e => { if (!e.target.closest("#menu,#menu-btn")) $("#menu").hidden = true; });
+$("#year").textContent = new Date().getFullYear();
+function render() {
+  closeSheet();
+  const p = location.pathname;
+  if (p.startsWith("/booking/")) return viewResults();
+  if (p === "/checkout") return viewCheckout();
+  return viewHome();
+}
+
+/* ---------- home ---------- */
+function featured(rs) {
+  const wanted = [["Nairobi", "Mombasa"], ["Mombasa", "Nairobi"], ["Nairobi", "Kampala"], ["Mombasa", "Busia"], ["Nairobi", "Malindi"], ["Mombasa", "Malaba"]];
+  const out = [];
+  wanted.forEach(([a, b]) => { const r = rs.find(x => x.origin === a && x.destination === b); if (r) out.push(r); });
+  rs.forEach(r => { if (out.length < 6 && !out.includes(r)) out.push(r); });
+  return out.slice(0, 6);
+}
+async function viewHome() {
+  document.title = "Mash Poa – Official Online Bus Booking Website";
+  const rs = await routes();
+  const saved = store.get("mp_search") || {};
+  const origins = [...new Set(rs.map(r => r.origin))].sort();
+  const opt = (list, v) => list.map(x => `<option ${x === v ? "selected" : ""}>${esc(x)}</option>`).join("");
+  const feats = featured(rs);
+  app.innerHTML = `
+  <section class="hero"><div class="wrap">
+    <p class="hero-kicker">Official Mash Poa booking website</p>
+    <h1>Mash Poa – Official Online Bus Booking Website</h1>
+    <p>Search routes, choose your seat and pay securely online.</p>
+  </div></section>
+  <div class="wrap"><form class="search" id="search">
+    <div class="tabs"><button type="button" class="tab on" data-trip="one">One way</button><button type="button" class="tab" data-trip="round">Round trip</button></div>
+    <div class="fld"><label>From</label><div class="ctl">${ico.pin("#e3221c")}<select id="from" required><option value="" disabled ${saved.from ? "" : "selected"}>Leaving from</option>${opt(origins, saved.from)}</select></div></div>
+    <div class="swap-row"><button type="button" class="swap" id="swap" aria-label="Swap">⇄</button></div>
+    <div class="fld"><label>To</label><div class="ctl">${ico.pin("#e3221c")}<select id="to" required></select></div></div>
+    <div class="fld"><label>Departure</label><div class="ctl">${ico.cal}<input id="date" type="date" required></div></div>
+    <button class="btn block" type="submit">Search buses</button>
+    <div class="feedback" id="feedback" role="status"></div>
+    <div class="pay-via">You can pay via <span class="mpesa">M-PESA</span></div>
+  </form></div>
+  <section class="section"><div class="wrap">
+    <h2>Top routes</h2><p class="sub">Explore popular routes served by Mash Poa</p>
+    <div class="route-grid">${feats.map((r, i) => `<a class="route-card" data-link href="/booking/${todayIso()}?from=${encodeURIComponent(r.origin)}&to=${encodeURIComponent(r.destination)}"><div class="route-img c${i % 6}"><span class="badge">${esc(r.destination)}</span></div><div class="route-body"><h3>${esc(r.origin)} → ${esc(r.destination)}</h3><span>Search buses <b>→</b></span></div></a>`).join("")}</div>
+  </div></section>
+  <section class="section"><div class="wrap"><div class="features">
+    <div class="feature"><i style="background:#fde4e4">🚌</i><h3>Top-tier service</h3><p>A travel experience shaped around comfort, punctuality and service on every trip.</p></div>
+    <div class="feature"><i style="background:#fef3c7">🎟️</i><h3>Easy online booking</h3><p>Pick your seat, pay with M-PESA and get your ticket in live chat.</p></div>
+    <div class="feature"><i style="background:#d9f7e6">🛡️</i><h3>Safety first</h3><p>Well-maintained fleets and careful operating standards throughout your journey.</p></div>
+  </div></div></section>`;
+  const dateEl = $("#date"); dateEl.min = todayIso(); dateEl.value = saved.date && saved.date >= todayIso() ? saved.date : todayIso();
+  const fromEl = $("#from"), toEl = $("#to");
+  const fillTo = keep => {
+    const dests = [...new Set(rs.filter(r => !fromEl.value || r.origin === fromEl.value).map(r => r.destination))].sort();
+    toEl.innerHTML = `<option value="" disabled ${keep && dests.includes(keep) ? "" : "selected"}>Going to</option>` + opt(dests, keep);
+  };
+  fillTo(saved.to); fromEl.onchange = () => fillTo("");
+  $("#swap").onclick = () => {
+    const a = fromEl.value, b = toEl.value; if (!b) return;
+    if (![...fromEl.options].some(o => o.value === b)) return;
+    fromEl.value = b; fillTo(a);
+  };
+  let round = false;
+  $$(".tab").forEach(t => t.onclick = () => { $$(".tab").forEach(x => x.classList.toggle("on", x === t)); round = t.dataset.trip === "round"; $("#feedback").textContent = round ? "Round-trip booking is not available yet. Book each direction as a one way trip." : ""; });
+  $("#search").onsubmit = e => {
+    e.preventDefault();
+    const from = fromEl.value, to = toEl.value, date = dateEl.value;
+    if (!from || !to) { $("#feedback").textContent = "Choose where you are leaving from and going to."; return; }
+    if (round) { $("#feedback").textContent = "Round-trip booking is not available yet. Book each direction as a one way trip."; return; }
+    store.set("mp_search", { from, to, date });
+    go(`/booking/${date}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+  };
+  renderFooter(rs);
+}
+function renderFooter(rs) {
+  $("#footer-routes").innerHTML = featured(rs).map(r => `<a data-link href="/booking/${todayIso()}?from=${encodeURIComponent(r.origin)}&to=${encodeURIComponent(r.destination)}">${esc(r.origin)} → ${esc(r.destination)}</a>`).join("");
+}
+
+/* ---------- results ---------- */
+async function viewResults() {
+  const date = location.pathname.split("/")[2] || todayIso();
+  const q = new URLSearchParams(location.search), from = q.get("from") || "", to = q.get("to") || "";
+  document.title = `${from} to ${to} bus tickets – Mash Poa`;
+  const url = d => `/booking/${d}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  const days = [0, 1, 2, 3].map(i => addDays(date, i));
+  app.innerHTML = `
+  <section class="results-head"><div class="wrap"><div><h1>${esc(from)}<em>→</em>${esc(to)}</h1><small>${esc(longDate(date))} ${esc(date.slice(0, 4))}</small></div><button class="edit-search" id="edit">Edit search</button></div></section>
+  <div class="wrap">
+    <div class="datestrip"><button class="arrow" id="prev" ${date <= todayIso() ? "disabled" : ""}>‹</button>${days.map((d, i) => `<button class="${i === 0 ? "on" : ""}" data-d="${d}">${esc(dayName(d))}<b>${Number(d.slice(8))}</b>${new Date(d + "T12:00:00").toLocaleDateString("en-GB", { month: "short" })}</button>`).join("")}<button class="arrow" id="next">›</button></div>
+    <div class="count-row"><span id="count">Searching…</span></div>
+    <div class="bus-list" id="buses"></div>
+  </div>`;
+  $("#edit").onclick = () => go("/");
+  $("#prev").onclick = () => go(url(addDays(date, -1)));
+  $("#next").onclick = () => go(url(addDays(date, 1)));
+  $$("[data-d]").forEach(b => b.onclick = () => go(url(b.dataset.d)));
+  const list = $("#buses");
+  let trips = [];
+  try {
+    const r = await fetch("/api/schedules?" + new URLSearchParams({ from, to, date }));
+    trips = await r.json(); if (!r.ok) throw Error(trips.error || "Could not load buses.");
+  } catch (e) { $("#count").textContent = ""; list.innerHTML = `<div class="empty"><b>We could not load buses</b>${esc(e.message)}</div>`; return; }
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  trips = trips.filter(t => date !== todayIso() || mins(t.time) > nowMin).sort((a, b) => mins(a.time) - mins(b.time));
+  $("#count").textContent = `${trips.length} bus${trips.length === 1 ? "" : "es"} available`;
+  if (!trips.length) { list.innerHTML = `<div class="empty"><b>No buses for this date</b>Try another day from the date bar, or ask live chat for help.</div>`; return; }
+  list.innerHTML = trips.map(t => `<article class="bus">
+    <div class="l t">${esc(t.time)}<small>${esc(longDate(t.date))} · ${esc(t.route.origin)}</small>${t.availableSeats ? `<span class="seats-left">${t.availableSeats} seat${t.availableSeats === 1 ? "" : "s"} left</span>` : `<span class="seats-left">Sold out</span>`}</div>
+    <div class="mid"><b>Route: ${esc(t.route.origin)} – ${esc(t.route.destination)}</b><i></i>${esc(t.duration || "")}</div>
+    ${t.arrival ? `<div class="t r" style="text-align:right;display:none">${esc(t.arrival)}</div>` : ""}
+    <div class="price"><div>Normal<b>${ksh(t.fare_kes)}</b></div><button class="btn sm" data-id="${esc(t._id)}" ${t.availableSeats ? "" : "disabled"}>Select seats</button></div>
+  </article>`).join("");
+  $$("[data-id]", list).forEach(b => b.onclick = () => openSeats(trips.find(t => t._id === b.dataset.id)));
+}
+
+/* ---------- bottom sheets: seats, boarding & drop-off ---------- */
+let sheet = null;
+function closeSheet() { if (sheet) { sheet.remove(); sheet = null; } }
+function openSheet(html) {
+  closeSheet();
+  sheet = document.createElement("div"); sheet.className = "sheet-back";
+  sheet.innerHTML = `<div class="sheet">${html}</div>`;
+  sheet.addEventListener("click", e => { if (e.target === sheet) closeSheet(); });
+  document.body.appendChild(sheet);
+  return sheet.firstElementChild;
+}
+function openSeats(trip, keep) {
+  const sel = new Set(keep || []);
+  const cap = trip.capacity, rows = Math.ceil(cap / 4);
+  const logo = `<span class="logo-text" style="font-size:16px">MASH<i style="font-size:10px">Poa</i></span>`;
+  const el = openSheet(`
+    <div class="sheet-head">${logo}<div><h3>${esc(trip.route.origin)} → ${esc(trip.route.destination)}</h3><small>${esc(longDate(trip.date))} · ${esc(trip.time)}${trip.arrival ? " → " + esc(trip.arrival) : ""}</small><small class="ok">${trip.availableSeats} seats remaining</small></div><button class="x" aria-label="Close">×</button></div>
+    <div class="sheet-body"><div class="bus-map"><div class="wheel"></div><div id="grid"></div></div>
+      <div class="legend"><span><i></i>Available</span><span><i class="m"></i>Your seat</span><span><i class="t"></i>Occupied</span></div>
+      <p class="hint" style="text-align:center;margin-top:12px">Fare ${ksh(trip.fare_kes)} per seat · choose up to 8 seats</p></div>
+    <div class="sheet-foot"><div><small id="cnt"></small><b id="tot"></b></div><button class="btn" id="go">Continue</button></div>`);
+  $(".x", el).onclick = closeSheet;
+  const draw = () => {
+    let h = "";
+    for (let r = 0; r < rows; r++) {
+      h += '<div class="srow">';
+      for (let k = 0; k < 4; k++) {
+        const n = r * 4 + k + 1; if (k === 2) h += '<span class="aisle"></span>';
+        if (n > cap) { h += '<span class="seat ghost"></span>'; continue; }
+        const s = String(n), taken = trip.takenSeats.includes(s);
+        h += `<button type="button" class="seat ${taken ? "taken" : sel.has(s) ? "mine" : ""}" data-s="${s}" ${taken ? "disabled" : ""}>${s}</button>`;
+      }
+      h += "</div>";
+    }
+    $("#grid", el).innerHTML = h;
+    $("#cnt", el).textContent = `${sel.size} seat(s) selected`;
+    $("#tot", el).textContent = ksh(trip.fare_kes * sel.size);
+    const go = $("#go", el); go.disabled = !sel.size; go.textContent = sel.size ? `Continue with ${sel.size} seat${sel.size > 1 ? "s" : ""}` : "Select seats to continue";
+    $$("[data-s]", el).forEach(b => b.onclick = () => { const s = b.dataset.s; if (sel.has(s)) sel.delete(s); else if (sel.size < 8) sel.add(s); draw(); });
+  };
+  draw();
+  $("#go", el).onclick = () => openPoints(trip, [...sel]);
+}
+function openPoints(trip, seats) {
+  let boarding = "", drop = "";
+  const o = trip.route.origin, d = trip.route.destination;
+  const el = openSheet(`
+    <div class="sheet-head"><button class="x" id="bk" style="margin:0" aria-label="Back">←</button><div><h3>Boarding &amp; drop-off</h3><small>${seats.length} seat${seats.length > 1 ? "s" : ""} · ${esc(seats.join(", "))}</small></div><button class="x" aria-label="Close">×</button></div>
+    <div class="sheet-body">
+      <div class="pt-title"><b>1</b>Boarding point</div>
+      <button class="pt" data-k="b" data-v="${esc(o)}"><span class="dot"></span><div><b>${esc(o.toUpperCase())}</b><small>${esc(o.toUpperCase())}</small></div><span class="tm">${esc(trip.time)}</span></button>
+      <div class="pt-title"><b class="r">2</b>Drop-off point</div>
+      <button class="pt" data-k="d" data-v="${esc(d)}"><span class="dot"></span><div><b>${esc(d.toUpperCase())}</b><small>${esc(d.toUpperCase())}</small></div>${trip.arrival ? `<span class="tm" style="color:var(--red)">≈ ${esc(trip.arrival)}</span>` : ""}</button>
+      <div class="note">Please arrive at your pickup point at least 30 minutes before departure.</div>
+    </div>
+    <div class="sheet-foot"><div><small>Total (${seats.length} seat${seats.length > 1 ? "s" : ""})</small><b>${ksh(trip.fare_kes * seats.length)}</b></div><button class="btn" id="cont" disabled>Select both points</button></div>`);
+  $$(".x", el).forEach(x => { if (x.id !== "bk") x.onclick = closeSheet; });
+  $("#bk", el).onclick = () => openSeats(trip, seats);
+  $$(".pt", el).forEach(b => b.onclick = () => {
+    $$(`.pt[data-k="${b.dataset.k}"]`, el).forEach(x => x.classList.toggle("on", x === b));
+    if (b.dataset.k === "b") boarding = b.dataset.v; else drop = b.dataset.v;
+    const c = $("#cont", el); c.disabled = !(boarding && drop); c.textContent = boarding && drop ? "Continue" : "Select both points";
+  });
+  $("#cont", el).onclick = () => {
+    store.set("mp_trip", { trip: { _id: trip._id, routeId: trip.route._id, origin: o, destination: d, date: trip.date, time: trip.time, arrival: trip.arrival || "", fare: trip.fare_kes }, seats, boarding, drop });
+    store.del("mp_pax"); store.set("mp_step", "details");
+    go("/checkout");
+  };
+}
+
+/* ---------- checkout ---------- */
+const NATIONS = ["Kenyan", "Ugandan", "Tanzanian", "Rwandan", "Burundian", "South Sudanese", "Other"];
+const CODES = [["+254", "Kenya"], ["+256", "Uganda"], ["+255", "Tanzania"], ["+250", "Rwanda"]];
+function stepsBar(step) {
+  const d = step === "pay";
+  return `<div class="steps"><div class="s done"><span class="n">✓</span>Seats</div><span class="ln done"></span><div class="s ${d ? "done" : "cur"}"><span class="n">${d ? "✓" : "2"}</span>Passenger details</div><span class="ln ${d ? "done" : ""}"></span><div class="s ${d ? "cur" : ""}"><span class="n">3</span>Payment</div></div>`;
+}
+function viewCheckout() {
+  const T = store.get("mp_trip");
+  if (!T) { go("/", true); return; }
+  document.title = "Checkout – Mash Poa";
+  const pax = store.get("mp_pax") || T.seats.map(s => ({ seat: s, done: false }));
+  let open = Math.max(0, pax.findIndex(p => !p.done));
+  let step = store.get("mp_step") || "details";
+  const total = T.trip.fare * T.seats.length;
+  const save = () => store.set("mp_pax", pax);
+  const summary = full => `<div class="card"><h3>${full ? "Booking summary" : "Fare summary"}</h3>
+    <div class="sum-trip"><span class="tag">OUTBOUND</span>
+      <div class="sum-row"><b>${esc(T.trip.origin)} → ${esc(T.trip.destination)}</b><span>${esc(longDate(T.trip.date))}</span></div>
+      <div class="sum-row"><span>${esc(T.trip.time)}${T.trip.arrival ? " → " + esc(T.trip.arrival) : ""}</span></div>
+      ${full ? `<div class="sum-row"><span>Boarding</span><b>${esc(T.boarding.toUpperCase())}</b></div><div class="sum-row"><span>Drop-off</span><b>${esc(T.drop.toUpperCase())}</b></div><div class="sum-row"><span>Seats</span><b>${esc(T.seats.join(", "))}</b></div>` : ""}
+      <div class="sum-row"><span>Standard seat × ${T.seats.length}</span><b>${ksh(total)}</b></div></div>
+    <div class="total"><span>Total payable</span><b>${ksh(total)}</b></div>`;
+  const paint = () => {
+    if (step === "pay") return paintPay();
+    app.innerHTML = `<div class="wrap">${`<button class="back" id="bk">← Back to buses</button>`}${stepsBar("details")}
+      <div class="cols"><div>
+        <div class="card trip-strip"><div><small style="color:var(--red);font-weight:800">OUTBOUND</small><b>${esc(T.trip.origin)} → ${esc(T.trip.destination)}</b><small>${esc(longDate(T.trip.date))} · ${esc(T.trip.time)}${T.trip.arrival ? " → " + esc(T.trip.arrival) : ""}</small></div><span class="pill">${T.seats.length} seat${T.seats.length > 1 ? "s" : ""} · ${esc(T.seats.join(", "))}</span></div>
+        <h3 style="margin:16px 2px 10px;font-size:14px">Passenger details</h3>
+        <div id="paxlist">${pax.map((p, i) => paxHtml(p, i, i === open)).join("")}</div>
+        <div class="card pts-card"><div><small>Boarding</small><b>${esc(T.boarding.toUpperCase())}</b><small style="margin-top:8px">Drop-off</small><b>${esc(T.drop.toUpperCase())}</b></div><button class="btn ghost sm" id="editpts">Edit</button></div>
+      </div><div>${summary(false)}<button class="btn block" id="topay" ${pax.every(p => p.done) ? "" : "disabled"}>Continue to payment</button><div class="secure">256-bit secured booking</div></div></div></div>`;
+    $("#bk").onclick = () => history.back();
+    $("#editpts").onclick = () => history.back();
+    $("#topay").onclick = () => { step = "pay"; store.set("mp_step", "pay"); paint(); window.scrollTo(0, 0); };
+    $$(".pax-h").forEach(h => h.onclick = () => { open = Number(h.dataset.i); paint(); });
+    $$(".savepax").forEach(b => b.onclick = () => savePax(Number(b.dataset.i)));
+  };
+  const paxHtml = (p, i, isOpen) => {
+    const head = `<div class="pax-h ${p.done ? "ok" : ""}" data-i="${i}"><span class="num">${p.done ? "✓" : i + 1}</span><div><b>Passenger ${i + 1}</b><small>Outbound seat ${esc(p.seat)} · Standard${p.done ? " · " + esc(p.first + " " + p.last) : ""}</small></div><span class="pill ${p.done ? "ok" : "warn"}">${p.done ? "Complete" : "Action required"}</span></div>`;
+    if (!isOpen) return `<div class="pax">${head}</div>`;
+    return `<div class="pax open">${head}<div class="pax-f" data-i="${i}">
+      <div><label>First name <em>*</em></label><input class="in" name="first" value="${esc(p.first)}" placeholder="First name" autocomplete="given-name"></div>
+      <div><label>Last name <em>*</em></label><input class="in" name="last" value="${esc(p.last)}" placeholder="Last name" autocomplete="family-name"></div>
+      <div><label>Document type <em>*</em></label><select class="in" name="docType">${["National ID", "Passport", "Alien ID"].map(x => `<option ${p.docType === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+      <div><label>Document number <em>*</em></label><input class="in" name="docNumber" value="${esc(p.docNumber)}" placeholder="Enter document number"></div>
+      <div><label>Nationality <em>*</em></label><select class="in" name="nationality"><option value="">Select nationality</option>${NATIONS.map(x => `<option ${p.nationality === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+      <div><label>Passenger phone <em>*</em></label><div class="phone"><select class="in" name="code">${CODES.map(([c, n]) => `<option value="${c}" ${p.code === c ? "selected" : ""}>${c} ${n}</option>`).join("")}</select><input class="in" name="phone" inputmode="tel" value="${esc(p.phone)}" placeholder="712 345 678"></div></div>
+      <div class="full"><label>Ticket email <em>*</em></label><input class="in" name="email" type="email" value="${esc(p.email)}" placeholder="you@example.com" autocomplete="email"></div>
+      <div class="full"><div class="err" id="err${i}"></div><button class="btn dark sm savepax" data-i="${i}">Save passenger</button></div></div></div>`;
+  };
+  const savePax = i => {
+    const f = $(`.pax-f[data-i="${i}"]`), v = n => (f.querySelector(`[name="${n}"]`).value || "").trim();
+    const d = { first: v("first"), last: v("last"), docType: v("docType"), docNumber: v("docNumber"), nationality: v("nationality"), code: v("code"), phone: v("phone").replace(/\D/g, "").replace(/^0+/, ""), email: v("email") };
+    const err = m => { $("#err" + i).textContent = m; };
+    if (!d.first || !d.last) return err("Enter the passenger's first and last name.");
+    if (d.docNumber.length < 5) return err("Enter a valid document number.");
+    if (!d.nationality) return err("Select the passenger's nationality.");
+    if (d.phone.length < 8 || d.phone.length > 12) return err("Enter a valid phone number, for example 712 345 678.");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) return err("Enter a valid email for the ticket.");
+    Object.assign(pax[i], d, { done: true }); save();
+    open = pax.findIndex(p => !p.done); paint();
+  };
+  const paintPay = () => {
+    const p1 = pax[0], phone = (p1.code || "+254") + p1.phone;
+    app.innerHTML = `<div class="wrap"><button class="back" id="bk">← Back to passenger details</button>${stepsBar("pay")}
+      <div class="cols"><div>
+        <h3 style="margin:16px 2px 10px;font-size:14px">Choose how to pay</h3>
+        <div class="method"><span class="dot"></span><div><b>M-PESA</b><small>Pay securely with M-PESA</small></div><span class="mpesa">M-PESA</span></div>
+        <div class="card"><div class="amount-box"><span style="color:var(--muted);font-size:12px">Amount to pay</span><b>${ksh(total)}</b></div>
+          <label style="font-size:11px;font-weight:700;color:var(--muted)">Payment phone number</label>
+          <input class="in" id="payphone" inputmode="tel" value="${esc(phone)}" style="margin-top:5px">
+          <p class="hint">We never ask for your M-PESA PIN on this website. An agent will send official payment details in live chat.</p>
+          <label class="chk"><input type="checkbox" id="agree" checked><span>I confirm the passenger details and accept the applicable terms and conditions.</span></label>
+          <button class="btn block" id="paybtn">Confirm booking</button><div class="err" id="payerr"></div></div>
+      </div><div>${summary(true)}</div>
+        <div class="card" style="grid-column:auto"><h3>Passenger details</h3>${pax.map((p, i) => `<div class="sum-row"><b>${esc(p.first + " " + p.last)}</b><span>Seat ${esc(p.seat)}</span></div>`).join("")}</div></div></div>`;
+    $("#bk").onclick = () => { step = "details"; store.set("mp_step", "details"); paint(); };
+    $("#paybtn").onclick = async () => {
+      const b = $("#paybtn"), err = $("#payerr"); err.textContent = "";
+      if (!$("#agree").checked) { err.textContent = "Please accept the terms and conditions to continue."; return; }
+      const digits = $("#payphone").value.replace(/\D/g, ""); if (digits.length < 9) { err.textContent = "Enter a valid phone number."; return; }
+      b.disabled = true; b.textContent = "Creating your booking…";
+      try {
+        const passengers = pax.map(p => ({ name: (p.first + " " + p.last).trim(), phone: (p.code || "+254") + p.phone, docType: p.docType, docNumber: p.docNumber, nationality: p.nationality, email: p.email }));
+        const r = await fetch("/api/bookings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ routeId: T.trip.routeId, scheduleId: T.trip._id, seats: T.seats, passengers, boarding: T.boarding, dropoff: T.drop }) });
+        const data = await r.json(); if (!r.ok) throw Error(data.error || "Could not create the booking.");
+        const bk = data.booking;
+        store.set("mp_booking", { ref: bk.ref, name: passengers[0].name, phone: "+" + digits.replace(/^\+/, ""), from: bk.from, to: bk.to, date: bk.date, time: bk.time, seats: bk.seats, amount: bk.amount });
+        store.del("mp_trip"); store.del("mp_pax"); store.del("mp_step");
+        location.href = "/chat.html";
+      } catch (e) { err.textContent = e.message; b.disabled = false; b.textContent = "Confirm booking"; }
+    };
+  };
+  paint();
+}
+
+render();
+})();
