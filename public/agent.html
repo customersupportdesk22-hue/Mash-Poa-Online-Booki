@@ -11,5 +11,5 @@ function show(){const c=items[current];if(!c)return;$('messages').innerHTML=c.me
 $('send').onclick=()=>{const t=$('reply').value.trim();if(t&&current){sock.emit('agent:reply',{chatId:current,text:t});$('reply').value=''}};$('reply').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('send').click()}};
 $('sendPay').onclick=()=>{if(current)sock.emit('agent:payment',{chatId:current,amount:Number($('amount').value)||0})};
 $('stk').onclick=()=>{if(current&&confirm('Have you actually initiated the STK Push for this customer?'))sock.emit('agent:stk-initiated',{chatId:current})};
-$('paid').onclick=()=>{if(!current)return;const ref=items[current].bookingRef;if(!ref)return alert('This chat has no booking reference.');if(confirm('Have you verified the payment for '+ref?'))sock.emit('agent:paid',{chatId:current,ref})};
+$('paid').onclick=()=>{if(!current)return;const ref=items[current].bookingRef;if(!ref)return alert('This chat has no booking reference.');if(confirm('Have you verified the payment for '+ref+'?'))sock.emit('agent:paid',{chatId:current,ref})};
 </script></body></html>
