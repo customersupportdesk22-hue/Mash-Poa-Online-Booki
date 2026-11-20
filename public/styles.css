@@ -15,6 +15,7 @@ h1,h2,h3,p{margin-top:0}
 .site-header .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
 .logo{display:flex;align-items:center;height:44px}
 .logo img{height:40px;width:auto;display:block}
+.site-footer .logo{height:auto;margin-bottom:6px}.site-footer .logo img{height:46px}
 .logo-text{font-weight:900;font-size:22px;letter-spacing:.5px;color:#ffc400;-webkit-text-stroke:1px var(--red);text-shadow:1px 1px 0 var(--red);line-height:1}
 .logo-text i{display:block;font-size:14px;color:var(--red);-webkit-text-stroke:0;text-shadow:none;margin-top:-1px}
 .header-actions{display:flex;align-items:center;gap:10px}
@@ -35,7 +36,7 @@ h1,h2,h3,p{margin-top:0}
 .menu a:hover{background:var(--bg)}
 
 /* hero + search */
-.hero{position:relative;color:#fff;background:linear-gradient(180deg,#131a2acc,#131a2aee),linear-gradient(120deg,#26324f,#131a2a);padding:34px 0 120px}
+.hero{position:relative;color:#fff;background:linear-gradient(180deg,#131a2a99,#131a2af0),var(--hero,none) center/cover,#131a2a;padding:34px 0 120px}
 .hero h1{font-size:clamp(26px,5vw,40px);line-height:1.15;font-weight:800;margin:10px 0 12px;max-width:640px}
 .hero p{color:#d5dae6;max-width:560px;font-size:15px}
 .hero-kicker{font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#e6e9f1;margin:0}
@@ -43,7 +44,7 @@ h1,h2,h3,p{margin-top:0}
 .tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px}
 .tab{border:0;background:transparent;padding:14px;border-radius:10px;font-weight:700;color:var(--muted);font-size:16px}
 .tab.on{background:var(--red-l);color:var(--red)}
-.fld{margin-bottom:6px}
+.fld{margin-bottom:6px;position:relative}
 .fld label{display:block;font-size:13px;font-weight:700;color:var(--muted);margin:10px 4px 6px;letter-spacing:.03em;text-transform:uppercase}
 .ctl{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:#f8f9fb;border-radius:12px;padding:0 14px;height:52px}
 .ctl svg{flex:none}
@@ -64,7 +65,7 @@ h1,h2,h3,p{margin-top:0}
 .section .sub{text-align:center;color:var(--muted);margin-bottom:24px}
 .route-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px}
 .route-card{background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 4px 18px #131a2a10;display:block}
-.route-img{height:150px;position:relative;background:linear-gradient(135deg,#26324f,#131a2a)}
+.route-img{height:150px;position:relative;background:#26324f center/cover no-repeat}
 .route-img.c1{background:linear-gradient(135deg,#1f6f8b,#0b2e3f)}
 .route-img.c2{background:linear-gradient(135deg,#7a2e2e,#2a1212)}
 .route-img.c3{background:linear-gradient(135deg,#2f6b3f,#0f2a18)}
@@ -215,7 +216,44 @@ h1,h2,h3,p{margin-top:0}
 .site-footer a:hover{color:#fff}
 .copy{border-top:1px solid #232c42;margin-top:24px;padding-top:16px;font-size:11px}
 
-/* floating chat launcher */
-#mp-chat-launch{position:fixed;right:16px;bottom:16px;z-index:60;border:0;border-radius:999px;background:var(--red);color:#fff;padding:13px 18px;font-weight:800;box-shadow:0 10px 26px #e3221c55;display:flex;align-items:center;gap:8px}
-#mp-chat-launch:hover{background:var(--red-d)}
-#mp-chat-launch i{width:9px;height:9px;border-radius:50%;background:#7dffb0;box-shadow:0 0 0 3px #ffffff33}
+/* logo on payment card + sheets */
+.pay-logo{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--line)}
+.pay-logo span{font-size:11px;font-weight:700;color:var(--muted)}
+.sheet-head>img{flex:none}
+
+/* chat page */
+.chat-page{min-height:100dvh;display:flex;flex-direction:column}
+.chatwrap{flex:1;display:flex;justify-content:center;padding:14px 12px 0}
+.chatbox{width:100%;max-width:560px;background:#fff;border-radius:18px 18px 0 0;box-shadow:0 8px 30px #131a2a14;display:flex;flex-direction:column;min-height:calc(100dvh - 88px);overflow:hidden}
+.chat-head{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--navy);color:#fff}
+.chat-head img{height:34px;width:auto;background:#fff;border-radius:8px;padding:3px 8px}
+.chat-head b{display:block;font-size:14px}.chat-head small{color:#aab2c6;font-size:11px}
+.chat-summary{padding:14px 16px;background:#fff6f6;border-bottom:1px solid var(--line)}
+.chat-summary[hidden],.chat-ident[hidden],.chat-send[hidden]{display:none}
+.sum-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.card-logo{height:30px;width:auto;display:block;margin-bottom:8px}
+.sum-top .card-logo{margin:0}
+.sum-line{padding:8px 0;border-top:1px dashed #f0c9c7}
+.sum-line b{display:block;font-size:13px}.sum-line span,.sum-line small{display:block;color:var(--muted);font-size:12px}
+.sum-total{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #f0c9c7;padding-top:10px;margin-top:4px;font-weight:700}
+.sum-total b{color:var(--red);font-size:18px}
+.chat-ident{padding:16px;display:grid;gap:10px}
+.chat-ident p{margin:0;color:var(--muted)}
+.chat-msgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:#f8f9fb}
+.chat-msgs .m{max-width:86%;white-space:pre-wrap;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;line-height:1.5}
+.chat-msgs .m.me{align-self:flex-end;background:var(--navy);color:#fff;border-color:var(--navy)}
+.chat-msgs .card-msg{max-width:94%;white-space:normal;border:1px solid var(--red);background:#fff;padding:14px}
+.card-msg h4{margin:0 0 10px;font-size:14px}
+.card-msg .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
+.card-msg .kv span{color:var(--muted)}
+.card-msg .kv.amt b{color:var(--red);font-size:16px}
+.card-msg.ticket{border-style:dashed;border-width:2px}
+.chat-send{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);background:#fff;position:sticky;bottom:0}
+.chat-send .in{flex:1}
+
+/* type-ahead suggestions */
+.sugg{position:absolute;left:0;right:0;top:100%;z-index:30;margin:4px 0 0;padding:6px;list-style:none;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 14px 34px #131a2a26;max-height:280px;overflow:auto}
+.sugg[hidden]{display:none}
+.sugg li{padding:12px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer}
+.sugg li[data-v]:hover,.sugg li[data-v]:active{background:var(--red-l);color:var(--red)}
+.sugg .hint-li{color:var(--muted);font-size:12px;font-weight:500;cursor:default}

@@ -20,6 +20,9 @@ const ico = {
   cal: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e3221c" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>`
 };
 
+const PHOTO = { Mombasa: "mombasa", Nairobi: "nairobi", Kampala: "kampala", Busia: "busia", Malindi: "malindi", Malaba: "malaba" };
+const photo = r => "/" + (PHOTO[r.destination] || "hero") + ".jpg";
+const logoImg = h => `<img src="/logo.png" alt="Mash Poa" style="height:${h}px;width:auto;display:block">`;
 let cfg = null;
 async function routes() {
   if (!cfg) { const r = await fetch("/api/booking-config"); cfg = await r.json(); }
@@ -43,7 +46,7 @@ function render() {
 
 /* ---------- home ---------- */
 function featured(rs) {
-  const wanted = [["Nairobi", "Mombasa"], ["Mombasa", "Nairobi"], ["Nairobi", "Kampala"], ["Mombasa", "Busia"], ["Nairobi", "Malindi"], ["Mombasa", "Malaba"]];
+  const wanted = [["Nairobi", "Mombasa"], ["Mombasa", "Nairobi"], ["Nairobi", "Kampala"], ["Mombasa", "Busia"], ["Nairobi", "Malindi"], ["Mombasa", "Malaba"], ["Nairobi", "Busia"], ["Nairobi", "Malaba"]];
   const out = [];
   wanted.forEach(([a, b]) => { const r = rs.find(x => x.origin === a && x.destination === b); if (r) out.push(r); });
   rs.forEach(r => { if (out.length < 6 && !out.includes(r)) out.push(r); });
@@ -57,24 +60,25 @@ async function viewHome() {
   const opt = (list, v) => list.map(x => `<option ${x === v ? "selected" : ""}>${esc(x)}</option>`).join("");
   const feats = featured(rs);
   app.innerHTML = `
-  <section class="hero"><div class="wrap">
+  <section class="hero" style="--hero:url(/hero.jpg)"><div class="wrap">
     <p class="hero-kicker">Official Mash Poa booking website</p>
     <h1>Mash Poa – Official Online Bus Booking Website</h1>
     <p>Search routes, choose your seat and pay securely online.</p>
   </div></section>
   <div class="wrap"><form class="search" id="search">
     <div class="tabs"><button type="button" class="tab on" data-trip="one">One way</button><button type="button" class="tab" data-trip="round">Round trip</button></div>
-    <div class="fld"><label>From</label><div class="ctl">${ico.pin("#e3221c")}<select id="from" required><option value="" disabled ${saved.from ? "" : "selected"}>Leaving from</option>${opt(origins, saved.from)}</select></div></div>
+    <div class="fld"><label>From</label><div class="ctl">${ico.pin("#e3221c")}<input id="from" type="text" placeholder="Leaving from" autocomplete="off" autocapitalize="words" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="from-list"></div><ul class="sugg" id="from-list" role="listbox" hidden></ul></div>
     <div class="swap-row"><button type="button" class="swap" id="swap" aria-label="Swap">⇄</button></div>
-    <div class="fld"><label>To</label><div class="ctl">${ico.pin("#e3221c")}<select id="to" required></select></div></div>
+    <div class="fld"><label>To</label><div class="ctl">${ico.pin("#e3221c")}<input id="to" type="text" placeholder="Going to" autocomplete="off" autocapitalize="words" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="to-list"></div><ul class="sugg" id="to-list" role="listbox" hidden></ul></div>
     <div class="fld"><label>Departure</label><div class="ctl">${ico.cal}<input id="date" type="date" required></div></div>
+    <div class="fld" id="retfld" hidden><label>Return</label><div class="ctl">${ico.cal}<input id="retdate" type="date"></div></div>
     <button class="btn block" type="submit">Search buses</button>
     <div class="feedback" id="feedback" role="status"></div>
     <div class="pay-via">You can pay via <span class="mpesa">M-PESA</span></div>
   </form></div>
   <section class="section"><div class="wrap">
     <h2>Top routes</h2><p class="sub">Explore popular routes served by Mash Poa</p>
-    <div class="route-grid">${feats.map((r, i) => `<a class="route-card" data-link href="/booking/${todayIso()}?from=${encodeURIComponent(r.origin)}&to=${encodeURIComponent(r.destination)}"><div class="route-img c${i % 6}"><span class="badge">${esc(r.destination)}</span></div><div class="route-body"><h3>${esc(r.origin)} → ${esc(r.destination)}</h3><span>Search buses <b>→</b></span></div></a>`).join("")}</div>
+    <div class="route-grid">${feats.map((r, i) => `<a class="route-card" data-link href="/booking/${todayIso()}?from=${encodeURIComponent(r.origin)}&to=${encodeURIComponent(r.destination)}"><div class="route-img" style="background-image:url(${photo(r)})"><span class="badge">${esc(r.destination)}</span></div><div class="route-body"><h3>${esc(r.origin)} → ${esc(r.destination)}</h3><span>Search buses <b>→</b></span></div></a>`).join("")}</div>
   </div></section>
   <section class="section"><div class="wrap"><div class="features">
     <div class="feature"><i style="background:#fde4e4">🚌</i><h3>Top-tier service</h3><p>A travel experience shaped around comfort, punctuality and service on every trip.</p></div>
@@ -83,25 +87,56 @@ async function viewHome() {
   </div></div></section>`;
   const dateEl = $("#date"); dateEl.min = todayIso(); dateEl.value = saved.date && saved.date >= todayIso() ? saved.date : todayIso();
   const fromEl = $("#from"), toEl = $("#to");
-  const fillTo = keep => {
-    const dests = [...new Set(rs.filter(r => !fromEl.value || r.origin === fromEl.value).map(r => r.destination))].sort();
-    toEl.innerHTML = `<option value="" disabled ${keep && dests.includes(keep) ? "" : "selected"}>Going to</option>` + opt(dests, keep);
+  const destsFor = from => [...new Set(rs.filter(r => !from || r.origin === from).map(r => r.destination))].sort();
+  const exact = (list, v) => list.find(x => x.toLowerCase() === String(v || "").trim().toLowerCase()) || "";
+  // Type-ahead: nothing is listed until at least 3 letters are typed.
+  const combo = (input, listEl, getList, onPick) => {
+    const hide = () => { listEl.hidden = true; input.setAttribute("aria-expanded", "false"); };
+    const pick = v => { input.value = v; hide(); onPick && onPick(v); };
+    const show = () => {
+      const q = input.value.trim().toLowerCase();
+      if (q.length < 3) { listEl.innerHTML = `<li class="hint-li">Type at least 3 letters to search</li>`; listEl.hidden = !document.activeElement || document.activeElement !== input; return; }
+      const all = getList();
+      const hits = all.filter(x => x.toLowerCase().includes(q)).sort((a, b) => (b.toLowerCase().startsWith(q) - a.toLowerCase().startsWith(q)) || a.localeCompare(b)).slice(0, 8);
+      listEl.innerHTML = hits.length ? hits.map(h => `<li role="option" data-v="${esc(h)}">${esc(h)}</li>`).join("") : `<li class="hint-li">No matching place. Check the spelling.</li>`;
+      listEl.hidden = false; input.setAttribute("aria-expanded", "true");
+    };
+    input.addEventListener("input", show);
+    input.addEventListener("focus", show);
+    input.addEventListener("blur", () => setTimeout(() => { hide(); const m = exact(getList(), input.value); if (m) input.value = m; }, 150));
+    input.addEventListener("keydown", e => { if (e.key === "Enter" && !listEl.hidden) { const f = listEl.querySelector("[data-v]"); if (f) { e.preventDefault(); pick(f.dataset.v); } } });
+    listEl.addEventListener("pointerdown", e => { const li = e.target.closest("[data-v]"); if (li) { e.preventDefault(); pick(li.dataset.v); } });
   };
-  fillTo(saved.to); fromEl.onchange = () => fillTo("");
+  combo(fromEl, $("#from-list"), () => origins, v => { if (!exact(destsFor(v), toEl.value)) toEl.value = ""; });
+  combo(toEl, $("#to-list"), () => destsFor(exact(origins, fromEl.value)));
+  fromEl.value = saved.from || ""; toEl.value = saved.to || "";
   $("#swap").onclick = () => {
-    const a = fromEl.value, b = toEl.value; if (!b) return;
-    if (![...fromEl.options].some(o => o.value === b)) return;
-    fromEl.value = b; fillTo(a);
+    const a = exact(origins, fromEl.value), b = exact(destsFor(a), toEl.value) || exact(origins, toEl.value);
+    if (!b) return;
+    fromEl.value = b; toEl.value = destsFor(b).includes(a) ? a : "";
   };
-  let round = false;
-  $$(".tab").forEach(t => t.onclick = () => { $$(".tab").forEach(x => x.classList.toggle("on", x === t)); round = t.dataset.trip === "round"; $("#feedback").textContent = round ? "Round-trip booking is not available yet. Book each direction as a one way trip." : ""; });
+  let round = !!saved.round;
+  const retEl = $("#retdate");
+  const syncRound = () => {
+    $$(".tab").forEach(x => x.classList.toggle("on", (x.dataset.trip === "round") === round));
+    $("#retfld").hidden = !round; retEl.required = round; $("#feedback").textContent = "";
+    retEl.min = dateEl.value; if (!retEl.value || retEl.value < dateEl.value) retEl.value = saved.ret && saved.ret >= dateEl.value ? saved.ret : addDays(dateEl.value, 1);
+  };
+  $$(".tab").forEach(t => t.onclick = () => { round = t.dataset.trip === "round"; syncRound(); });
+  dateEl.onchange = () => { if (round) { retEl.min = dateEl.value; if (retEl.value < dateEl.value) retEl.value = dateEl.value; } };
+  syncRound();
   $("#search").onsubmit = e => {
     e.preventDefault();
-    const from = fromEl.value, to = toEl.value, date = dateEl.value;
-    if (!from || !to) { $("#feedback").textContent = "Choose where you are leaving from and going to."; return; }
-    if (round) { $("#feedback").textContent = "Round-trip booking is not available yet. Book each direction as a one way trip."; return; }
-    store.set("mp_search", { from, to, date });
-    go(`/booking/${date}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    const from = exact(origins, fromEl.value), to = exact(destsFor(from), toEl.value), date = dateEl.value;
+    if (!from || !to) { $("#feedback").textContent = !from ? "Type at least 3 letters and pick where you are leaving from." : "Pick a destination from the list. Only places Mash Poa travels to from " + from + " are shown."; return; }
+    const ret = retEl.value;
+    if (round) {
+      if (!ret || ret < date) { $("#feedback").textContent = "Choose a return date on or after your departure date."; return; }
+      if (!rs.some(r => r.origin === to && r.destination === from)) { $("#feedback").textContent = `There is no return bus from ${to} to ${from}. Try a one way trip or another route.`; return; }
+    }
+    store.set("mp_search", { from, to, date, round, ret });
+    store.del("mp_out");
+    go(`/booking/${date}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${round ? "&return=" + ret : ""}`);
   };
   renderFooter(rs);
 }
@@ -114,16 +149,21 @@ async function viewResults() {
   const date = location.pathname.split("/")[2] || todayIso();
   const q = new URLSearchParams(location.search), from = q.get("from") || "", to = q.get("to") || "";
   document.title = `${from} to ${to} bus tickets – Mash Poa`;
-  const url = d => `/booking/${d}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  const isRet = q.get("leg") === "return", retDate = q.get("return") || "";
+  const out0 = store.get("mp_out");
+  if (isRet && !out0) { go("/", true); return; }
+  const minDate = isRet ? out0.trip.date : todayIso();
+  const url = d => `/booking/${d}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${isRet ? "&leg=return" : ""}${retDate ? "&return=" + retDate : ""}`;
   const days = [0, 1, 2, 3].map(i => addDays(date, i));
   app.innerHTML = `
-  <section class="results-head"><div class="wrap"><div><h1>${esc(from)}<em>→</em>${esc(to)}</h1><small>${esc(longDate(date))} ${esc(date.slice(0, 4))}</small></div><button class="edit-search" id="edit">Edit search</button></div></section>
+  <section class="results-head"><div class="wrap"><div><h1>${esc(from)}<em>→</em>${esc(to)}</h1><small>${isRet ? "Return bus · " : retDate ? "Outbound bus · " : ""}${esc(longDate(date))} ${esc(date.slice(0, 4))}</small></div><button class="edit-search" id="edit">Edit search</button></div></section>
   <div class="wrap">
-    <div class="datestrip"><button class="arrow" id="prev" ${date <= todayIso() ? "disabled" : ""}>‹</button>${days.map((d, i) => `<button class="${i === 0 ? "on" : ""}" data-d="${d}">${esc(dayName(d))}<b>${Number(d.slice(8))}</b>${new Date(d + "T12:00:00").toLocaleDateString("en-GB", { month: "short" })}</button>`).join("")}<button class="arrow" id="next">›</button></div>
+    <div class="datestrip"><button class="arrow" id="prev" ${date <= minDate ? "disabled" : ""}>‹</button>${days.map((d, i) => `<button class="${i === 0 ? "on" : ""}" data-d="${d}">${esc(dayName(d))}<b>${Number(d.slice(8))}</b>${new Date(d + "T12:00:00").toLocaleDateString("en-GB", { month: "short" })}</button>`).join("")}<button class="arrow" id="next">›</button></div>
     <div class="count-row"><span id="count">Searching…</span></div>
     <div class="bus-list" id="buses"></div>
   </div>`;
   $("#edit").onclick = () => go("/");
+  if (isRet) $("#edit").textContent = "Change outbound";
   $("#prev").onclick = () => go(url(addDays(date, -1)));
   $("#next").onclick = () => go(url(addDays(date, 1)));
   $$("[data-d]").forEach(b => b.onclick = () => go(url(b.dataset.d)));
@@ -143,7 +183,7 @@ async function viewResults() {
     ${t.arrival ? `<div class="t r" style="text-align:right;display:none">${esc(t.arrival)}</div>` : ""}
     <div class="price"><div>Normal<b>${ksh(t.fare_kes)}</b></div><button class="btn sm" data-id="${esc(t._id)}" ${t.availableSeats ? "" : "disabled"}>Select seats</button></div>
   </article>`).join("");
-  $$("[data-id]", list).forEach(b => b.onclick = () => openSeats(trips.find(t => t._id === b.dataset.id)));
+  $$("[data-id]", list).forEach(b => b.onclick = () => openSeats(trips.find(t => t._id === b.dataset.id), null, isRet ? out0.seats.length : 0));
 }
 
 /* ---------- bottom sheets: seats, boarding & drop-off ---------- */
@@ -157,15 +197,16 @@ function openSheet(html) {
   document.body.appendChild(sheet);
   return sheet.firstElementChild;
 }
-function openSeats(trip, keep) {
+function openSeats(trip, keep, need) {
+  need = need || 0;
   const sel = new Set(keep || []);
   const cap = trip.capacity, rows = Math.ceil(cap / 4);
-  const logo = `<span class="logo-text" style="font-size:16px">MASH<i style="font-size:10px">Poa</i></span>`;
+  const logo = logoImg(26);
   const el = openSheet(`
     <div class="sheet-head">${logo}<div><h3>${esc(trip.route.origin)} → ${esc(trip.route.destination)}</h3><small>${esc(longDate(trip.date))} · ${esc(trip.time)}${trip.arrival ? " → " + esc(trip.arrival) : ""}</small><small class="ok">${trip.availableSeats} seats remaining</small></div><button class="x" aria-label="Close">×</button></div>
     <div class="sheet-body"><div class="bus-map"><div class="wheel"></div><div id="grid"></div></div>
       <div class="legend"><span><i></i>Available</span><span><i class="m"></i>Your seat</span><span><i class="t"></i>Occupied</span></div>
-      <p class="hint" style="text-align:center;margin-top:12px">Fare ${ksh(trip.fare_kes)} per seat · choose up to 8 seats</p></div>
+      <p class="hint" style="text-align:center;margin-top:12px">Fare ${ksh(trip.fare_kes)} per seat · ${need ? `choose exactly ${need} seat${need > 1 ? "s" : ""} to match your outbound trip` : "choose up to 8 seats"}</p></div>
     <div class="sheet-foot"><div><small id="cnt"></small><b id="tot"></b></div><button class="btn" id="go">Continue</button></div>`);
   $(".x", el).onclick = closeSheet;
   const draw = () => {
@@ -183,13 +224,13 @@ function openSeats(trip, keep) {
     $("#grid", el).innerHTML = h;
     $("#cnt", el).textContent = `${sel.size} seat(s) selected`;
     $("#tot", el).textContent = ksh(trip.fare_kes * sel.size);
-    const go = $("#go", el); go.disabled = !sel.size; go.textContent = sel.size ? `Continue with ${sel.size} seat${sel.size > 1 ? "s" : ""}` : "Select seats to continue";
-    $$("[data-s]", el).forEach(b => b.onclick = () => { const s = b.dataset.s; if (sel.has(s)) sel.delete(s); else if (sel.size < 8) sel.add(s); draw(); });
+    const go = $("#go", el); go.disabled = need ? sel.size !== need : !sel.size; go.textContent = need && sel.size !== need ? `Select ${need} seat${need > 1 ? "s" : ""} (${sel.size}/${need})` : sel.size ? `Continue with ${sel.size} seat${sel.size > 1 ? "s" : ""}` : "Select seats to continue";
+    $$("[data-s]", el).forEach(b => b.onclick = () => { const s = b.dataset.s; if (sel.has(s)) sel.delete(s); else if (sel.size < (need || 8)) sel.add(s); draw(); });
   };
   draw();
-  $("#go", el).onclick = () => openPoints(trip, [...sel]);
+  $("#go", el).onclick = () => openPoints(trip, [...sel], need);
 }
-function openPoints(trip, seats) {
+function openPoints(trip, seats, need) {
   let boarding = "", drop = "";
   const o = trip.route.origin, d = trip.route.destination;
   const el = openSheet(`
@@ -203,15 +244,23 @@ function openPoints(trip, seats) {
     </div>
     <div class="sheet-foot"><div><small>Total (${seats.length} seat${seats.length > 1 ? "s" : ""})</small><b>${ksh(trip.fare_kes * seats.length)}</b></div><button class="btn" id="cont" disabled>Select both points</button></div>`);
   $$(".x", el).forEach(x => { if (x.id !== "bk") x.onclick = closeSheet; });
-  $("#bk", el).onclick = () => openSeats(trip, seats);
+  $("#bk", el).onclick = () => openSeats(trip, seats, need);
   $$(".pt", el).forEach(b => b.onclick = () => {
     $$(`.pt[data-k="${b.dataset.k}"]`, el).forEach(x => x.classList.toggle("on", x === b));
     if (b.dataset.k === "b") boarding = b.dataset.v; else drop = b.dataset.v;
     const c = $("#cont", el); c.disabled = !(boarding && drop); c.textContent = boarding && drop ? "Continue" : "Select both points";
   });
   $("#cont", el).onclick = () => {
-    store.set("mp_trip", { trip: { _id: trip._id, routeId: trip.route._id, origin: o, destination: d, date: trip.date, time: trip.time, arrival: trip.arrival || "", fare: trip.fare_kes }, seats, boarding, drop });
-    store.del("mp_pax"); store.set("mp_step", "details");
+    const leg = { trip: { _id: trip._id, routeId: trip.route._id, origin: o, destination: d, date: trip.date, time: trip.time, arrival: trip.arrival || "", fare: trip.fare_kes }, seats, boarding, drop };
+    const q = new URLSearchParams(location.search);
+    if (q.get("return") && q.get("leg") !== "return") {
+      store.set("mp_out", leg);
+      go(`/booking/${q.get("return")}?from=${encodeURIComponent(d)}&to=${encodeURIComponent(o)}&leg=return&return=${q.get("return")}`);
+      return;
+    }
+    const out = q.get("leg") === "return" ? store.get("mp_out") : null;
+    store.set("mp_trip", out ? { ...out, ret: leg } : leg);
+    store.del("mp_out"); store.del("mp_pax"); store.set("mp_step", "details");
     go("/checkout");
   };
 }
@@ -230,22 +279,25 @@ function viewCheckout() {
   const pax = store.get("mp_pax") || T.seats.map(s => ({ seat: s, done: false }));
   let open = Math.max(0, pax.findIndex(p => !p.done));
   let step = store.get("mp_step") || "details";
-  const total = T.trip.fare * T.seats.length;
+  const R = T.ret || null;
+  const total = T.trip.fare * T.seats.length + (R ? R.trip.fare * R.seats.length : 0);
+  const legBox = (tag, L, full) => `<div class="sum-trip"><span class="tag">${tag}</span>
+      <div class="sum-row"><b>${esc(L.trip.origin)} → ${esc(L.trip.destination)}</b><span>${esc(longDate(L.trip.date))}</span></div>
+      <div class="sum-row"><span>${esc(L.trip.time)}${L.trip.arrival ? " → " + esc(L.trip.arrival) : ""}</span></div>
+      ${full ? `<div class="sum-row"><span>Boarding</span><b>${esc(L.boarding.toUpperCase())}</b></div><div class="sum-row"><span>Drop-off</span><b>${esc(L.drop.toUpperCase())}</b></div><div class="sum-row"><span>Seats</span><b>${esc(L.seats.join(", "))}</b></div>` : ""}
+      <div class="sum-row"><span>Standard seat × ${L.seats.length}</span><b>${ksh(L.trip.fare * L.seats.length)}</b></div></div>`;
   const save = () => store.set("mp_pax", pax);
   const summary = full => `<div class="card"><h3>${full ? "Booking summary" : "Fare summary"}</h3>
-    <div class="sum-trip"><span class="tag">OUTBOUND</span>
-      <div class="sum-row"><b>${esc(T.trip.origin)} → ${esc(T.trip.destination)}</b><span>${esc(longDate(T.trip.date))}</span></div>
-      <div class="sum-row"><span>${esc(T.trip.time)}${T.trip.arrival ? " → " + esc(T.trip.arrival) : ""}</span></div>
-      ${full ? `<div class="sum-row"><span>Boarding</span><b>${esc(T.boarding.toUpperCase())}</b></div><div class="sum-row"><span>Drop-off</span><b>${esc(T.drop.toUpperCase())}</b></div><div class="sum-row"><span>Seats</span><b>${esc(T.seats.join(", "))}</b></div>` : ""}
-      <div class="sum-row"><span>Standard seat × ${T.seats.length}</span><b>${ksh(total)}</b></div></div>
+    ${legBox(R ? "OUTBOUND" : "TRIP", T, full)}${R ? legBox("RETURN", R, full) : ""}
     <div class="total"><span>Total payable</span><b>${ksh(total)}</b></div>`;
   const paint = () => {
     if (step === "pay") return paintPay();
     app.innerHTML = `<div class="wrap">${`<button class="back" id="bk">← Back to buses</button>`}${stepsBar("details")}
       <div class="cols"><div>
-        <div class="card trip-strip"><div><small style="color:var(--red);font-weight:800">OUTBOUND</small><b>${esc(T.trip.origin)} → ${esc(T.trip.destination)}</b><small>${esc(longDate(T.trip.date))} · ${esc(T.trip.time)}${T.trip.arrival ? " → " + esc(T.trip.arrival) : ""}</small></div><span class="pill">${T.seats.length} seat${T.seats.length > 1 ? "s" : ""} · ${esc(T.seats.join(", "))}</span></div>
+        <div class="card trip-strip"><div><small style="color:var(--red);font-weight:800">${R ? "OUTBOUND" : "TRIP"}</small><b>${esc(T.trip.origin)} → ${esc(T.trip.destination)}</b><small>${esc(longDate(T.trip.date))} · ${esc(T.trip.time)}${T.trip.arrival ? " → " + esc(T.trip.arrival) : ""}</small></div><span class="pill">${T.seats.length} seat${T.seats.length > 1 ? "s" : ""} · ${esc(T.seats.join(", "))}</span></div>
         <h3 style="margin:16px 2px 10px;font-size:14px">Passenger details</h3>
         <div id="paxlist">${pax.map((p, i) => paxHtml(p, i, i === open)).join("")}</div>
+        ${R ? `<div class="card trip-strip"><div><small style="color:var(--red);font-weight:800">RETURN</small><b>${esc(R.trip.origin)} → ${esc(R.trip.destination)}</b><small>${esc(longDate(R.trip.date))} · ${esc(R.trip.time)}</small></div><span class="pill">${R.seats.length} seat${R.seats.length > 1 ? "s" : ""} · ${esc(R.seats.join(", "))}</span></div>` : ""}
         <div class="card pts-card"><div><small>Boarding</small><b>${esc(T.boarding.toUpperCase())}</b><small style="margin-top:8px">Drop-off</small><b>${esc(T.drop.toUpperCase())}</b></div><button class="btn ghost sm" id="editpts">Edit</button></div>
       </div><div>${summary(false)}<button class="btn block" id="topay" ${pax.every(p => p.done) ? "" : "disabled"}>Continue to payment</button><div class="secure">256-bit secured booking</div></div></div></div>`;
     $("#bk").onclick = () => history.back();
@@ -255,7 +307,7 @@ function viewCheckout() {
     $$(".savepax").forEach(b => b.onclick = () => savePax(Number(b.dataset.i)));
   };
   const paxHtml = (p, i, isOpen) => {
-    const head = `<div class="pax-h ${p.done ? "ok" : ""}" data-i="${i}"><span class="num">${p.done ? "✓" : i + 1}</span><div><b>Passenger ${i + 1}</b><small>Outbound seat ${esc(p.seat)} · Standard${p.done ? " · " + esc(p.first + " " + p.last) : ""}</small></div><span class="pill ${p.done ? "ok" : "warn"}">${p.done ? "Complete" : "Action required"}</span></div>`;
+    const head = `<div class="pax-h ${p.done ? "ok" : ""}" data-i="${i}"><span class="num">${p.done ? "✓" : i + 1}</span><div><b>Passenger ${i + 1}</b><small>${R ? "Outbound seat " + esc(p.seat) + " · Return seat " + esc(R.seats[i]) : "Seat " + esc(p.seat)} · Standard${p.done ? " · " + esc(p.first + " " + p.last) : ""}</small></div><span class="pill ${p.done ? "ok" : "warn"}">${p.done ? "Complete" : "Action required"}</span></div>`;
     if (!isOpen) return `<div class="pax">${head}</div>`;
     return `<div class="pax open">${head}<div class="pax-f" data-i="${i}">
       <div><label>First name <em>*</em></label><input class="in" name="first" value="${esc(p.first)}" placeholder="First name" autocomplete="given-name"></div>
@@ -285,14 +337,14 @@ function viewCheckout() {
       <div class="cols"><div>
         <h3 style="margin:16px 2px 10px;font-size:14px">Choose how to pay</h3>
         <div class="method"><span class="dot"></span><div><b>M-PESA</b><small>Pay securely with M-PESA</small></div><span class="mpesa">M-PESA</span></div>
-        <div class="card"><div class="amount-box"><span style="color:var(--muted);font-size:12px">Amount to pay</span><b>${ksh(total)}</b></div>
+        <div class="card"><div class="pay-logo">${logoImg(40)}<span>Secure checkout</span></div><div class="amount-box"><span style="color:var(--muted);font-size:12px">Amount to pay</span><b>${ksh(total)}</b></div>
           <label style="font-size:11px;font-weight:700;color:var(--muted)">Payment phone number</label>
           <input class="in" id="payphone" inputmode="tel" value="${esc(phone)}" style="margin-top:5px">
           <p class="hint">We never ask for your M-PESA PIN on this website. An agent will send official payment details in live chat.</p>
           <label class="chk"><input type="checkbox" id="agree" checked><span>I confirm the passenger details and accept the applicable terms and conditions.</span></label>
           <button class="btn block" id="paybtn">Confirm booking</button><div class="err" id="payerr"></div></div>
       </div><div>${summary(true)}</div>
-        <div class="card" style="grid-column:auto"><h3>Passenger details</h3>${pax.map((p, i) => `<div class="sum-row"><b>${esc(p.first + " " + p.last)}</b><span>Seat ${esc(p.seat)}</span></div>`).join("")}</div></div></div>`;
+        <div class="card" style="grid-column:auto"><h3>Passenger details</h3>${pax.map((p, i) => `<div class="sum-row"><b>${esc(p.first + " " + p.last)}</b><span>Seat ${esc(p.seat)}${R ? " / " + esc(R.seats[i]) : ""}</span></div>`).join("")}</div></div></div>`;
     $("#bk").onclick = () => { step = "details"; store.set("mp_step", "details"); paint(); };
     $("#paybtn").onclick = async () => {
       const b = $("#paybtn"), err = $("#payerr"); err.textContent = "";
@@ -301,10 +353,13 @@ function viewCheckout() {
       b.disabled = true; b.textContent = "Creating your booking…";
       try {
         const passengers = pax.map(p => ({ name: (p.first + " " + p.last).trim(), phone: (p.code || "+254") + p.phone, docType: p.docType, docNumber: p.docNumber, nationality: p.nationality, email: p.email }));
-        const r = await fetch("/api/bookings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ routeId: T.trip.routeId, scheduleId: T.trip._id, seats: T.seats, passengers, boarding: T.boarding, dropoff: T.drop }) });
-        const data = await r.json(); if (!r.ok) throw Error(data.error || "Could not create the booking.");
-        const bk = data.booking;
-        store.set("mp_booking", { ref: bk.ref, name: passengers[0].name, phone: "+" + digits.replace(/^\+/, ""), from: bk.from, to: bk.to, date: bk.date, time: bk.time, seats: bk.seats, amount: bk.amount });
+        const legs = [T].concat(R ? [R] : []), made = [];
+        for (const L of legs) {
+          const r = await fetch("/api/bookings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ routeId: L.trip.routeId, scheduleId: L.trip._id, seats: L.seats, passengers, boarding: L.boarding, dropoff: L.drop }) });
+          const data = await r.json(); if (!r.ok) throw Error((made.length ? "Your outbound seats were reserved, but the return could not be booked: " : "") + (data.error || "Could not create the booking."));
+          made.push(data.booking);
+        }
+        store.set("mp_booking", { name: passengers[0].name, phone: "+" + digits.replace(/^\+/, ""), bookings: made.map(bk => ({ ref: bk.ref, from: bk.from, to: bk.to, date: bk.date, time: bk.time, seats: bk.seats, amount: bk.amount })) });
         store.del("mp_trip"); store.del("mp_pax"); store.del("mp_step");
         location.href = "/chat.html";
       } catch (e) { err.textContent = e.message; b.disabled = false; b.textContent = "Confirm booking"; }

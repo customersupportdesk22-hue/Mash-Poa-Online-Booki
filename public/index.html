@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="/logo.png">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -16,7 +17,7 @@
   <header class="site-header">
     <div class="wrap">
       <a class="logo" href="/" data-link aria-label="Mash Poa home">
-        <img src="/logo.png" alt="Mash Poa" onerror="this.outerHTML='<span class=&quot;logo-text&quot;>MASH<i>Poa</i></span>'">
+        <img src="/logo.png" alt="Mash Poa">
       </a>
       <div class="header-actions">
         <a class="btn sm" href="/chat.html">Help</a>
@@ -35,7 +36,7 @@
     <div class="wrap">
       <div class="footer-grid">
         <div>
-          <a class="logo" href="/" data-link><img src="/logo.png" alt="Mash Poa" onerror="this.outerHTML='<span class=&quot;logo-text&quot;>MASH<i>Poa</i></span>'"></a>
+          <a class="logo" href="/" data-link><img src="/logo.png" alt="Mash Poa"></a>
           <p style="margin-top:14px">Affordable, safe and reliable travel across Kenya and East Africa.</p>
         </div>
         <div><h4>Company</h4><a href="/chat.html">Contact us</a><a href="/chat.html">Help &amp; support</a></div>
@@ -46,6 +47,7 @@
     </div>
   </footer>
 
+  <script src="/socket.io/socket.io.js" defer></script>
   <script src="/chat-widget.js" defer></script>
   <script src="/app.js" defer></script>
 </body>

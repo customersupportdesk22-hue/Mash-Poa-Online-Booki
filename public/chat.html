@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#e3221c">
+  <title>Live chat – Mash Poa</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="chat-page">
+  <header class="site-header">
+    <div class="wrap">
+      <a class="logo" href="/" aria-label="Mash Poa home"><img src="/logo.png" alt="Mash Poa"></a>
+      <div class="header-actions"><a class="btn sm ghost" href="/">Book a bus</a></div>
+    </div>
+  </header>
+
+  <main class="chatwrap">
+    <section class="chatbox" id="chatbox">
+      <div class="chat-head">
+        <img src="/logo.png" alt="Mash Poa">
+        <div><b>Mash Poa Support</b><small id="status">Booking help · Chat with our team</small></div>
+      </div>
+
+      <div id="summary" class="chat-summary" hidden></div>
+
+      <form id="ident" class="chat-ident">
+        <p>Enter your name and phone number to start a booking support conversation.</p>
+        <input class="in" id="name" placeholder="Your name" autocomplete="name">
+        <input class="in" id="phone" placeholder="Phone number, e.g. +254712345678" inputmode="tel" autocomplete="tel">
+        <button class="btn block" type="submit">Start conversation</button>
+        <div class="err" id="identErr"></div>
+      </form>
+
+      <div id="msgs" class="chat-msgs" aria-live="polite"></div>
+
+      <form id="send" class="chat-send" hidden>
+        <input class="in" id="text" placeholder="Write a message…" autocomplete="off">
+        <button class="btn" type="submit">Send</button>
+      </form>
+    </section>
+  </main>
+
+  <script>window.MashPoaChat = true;</script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+  (() => {
+    const $ = id => document.getElementById(id);
+    const ksh = n => "Ksh " + Number(n || 0).toLocaleString("en-KE");
+    const logo = '<img class="card-logo" src="/logo.png" alt="Mash Poa">';
+    const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem("mp_booking")); } catch {}
+    const legs = saved ? (saved.bookings || (saved.ref ? [saved] : [])) : [];
+    let socket = null, chatId = null;
+
+    if (legs.length) {
+      $("summary").hidden = false;
+      const total = legs.reduce((n, l) => n + Number(l.amount || 0), 0);
+      $("summary").innerHTML = '<div class="sum-top">' + logo + '<span class="pill">Booking received</span></div>' +
+        legs.map((l, i) => '<div class="sum-line"><b>' + (legs.length > 1 ? (i ? "Return" : "Outbound") + " · " : "") + esc(l.from) + " → " + esc(l.to) + '</b><span>' + esc(l.date) + " · " + esc(l.time) + " · Seat " + esc((l.seats || []).join(", ")) + '</span><small>Ref ' + esc(l.ref) + " · " + ksh(l.amount) + '</small></div>').join("") +
+        '<div class="sum-total"><span>Total to pay</span><b>' + ksh(total) + '</b></div>' +
+        '<p class="hint">An agent will send official payment details here. We never ask for your M-PESA PIN.</p>';
+      $("name").value = saved.name || "";
+      $("phone").value = saved.phone || "";
+    }
+
+    function bubble(msg) {
+      const d = document.createElement("div");
+      if (msg.type === "payment" && msg.payment) {
+        const p = msg.payment;
+        d.className = "m card-msg";
+        d.innerHTML = logo + '<h4>Official payment instructions</h4>' +
+          '<div class="kv"><span>Pay via</span><b>' + esc(String(p.type || "").toUpperCase()) + '</b></div>' +
+          '<div class="kv"><span>' + (p.type === "paybill" ? "Business number" : p.type === "till" ? "Till number" : p.type === "bank" ? "Account" : "Phone number") + '</span><b>' + esc(p.number) + '</b></div>' +
+          (p.account ? '<div class="kv"><span>Account</span><b>' + esc(p.account) + '</b></div>' : "") +
+          '<div class="kv"><span>Name</span><b>' + esc(p.accountName) + '</b></div>' +
+          (p.bookingRef ? '<div class="kv"><span>Booking</span><b>' + esc(p.bookingRef) + '</b></div>' : "") +
+          '<div class="kv amt"><span>Amount</span><b>' + ksh(p.amount) + '</b></div>';
+      } else if (msg.type === "ticket" && msg.ticket) {
+        const t = msg.ticket;
+        d.className = "m card-msg ticket";
+        d.innerHTML = logo + '<h4>Ticket ' + esc(t.ticketNo) + '</h4>' +
+          '<div class="kv"><span>Route</span><b>' + esc(t.from) + " → " + esc(t.to) + '</b></div>' +
+          '<div class="kv"><span>Departure</span><b>' + esc(t.date) + " " + esc(t.time) + '</b></div>' +
+          '<div class="kv"><span>Seats</span><b>' + esc((t.seats || []).join(", ")) + '</b></div>' +
+          '<div class="kv"><span>Passengers</span><b>' + esc((t.passengers || []).map(p => p.name).join(", ")) + '</b></div>' +
+          '<div class="kv amt"><span>Paid</span><b>' + ksh(t.amount) + '</b></div>';
+      } else if (msg.type === "booking" && msg.booking) {
+        d.className = "m me";
+        d.textContent = "Booking request " + msg.booking.ref;
+      } else {
+        d.className = "m" + (msg.from === "customer" ? " me" : "");
+        d.textContent = msg.text || "";
+      }
+      $("msgs").appendChild(d);
+      $("msgs").scrollTop = $("msgs").scrollHeight;
+      window.scrollTo(0, document.body.scrollHeight);
+    }
+
+    function start() {
+      const phone = $("phone").value.trim(), name = $("name").value.trim();
+      if (phone.replace(/\D/g, "").length < 9) { $("identErr").textContent = "Enter a valid phone number."; return; }
+      if (!window.io) { $("identErr").textContent = "Chat service is not ready. Please refresh this page."; return; }
+      $("identErr").textContent = ""; $("status").textContent = "Connecting…";
+      socket = io();
+      socket.on("connect", () => socket.emit("customer:start", { name, phone, bookingRef: legs[0] ? legs[0].ref : "" }));
+      socket.on("connect_error", () => { $("status").textContent = "Connection problem. Retrying…"; });
+      socket.on("chat:ready", d => {
+        chatId = d.chatId; $("msgs").innerHTML = "";
+        (d.messages || []).forEach(bubble);
+        const sent = new Set((d.messages || []).filter(m => m.type === "booking").map(m => m.booking.ref));
+        legs.forEach(l => { if (!sent.has(l.ref)) socket.emit("customer:booking", { chatId, ref: l.ref, from: l.from, to: l.to, date: l.date, time: l.time, seats: l.seats, amount: l.amount }); });
+        $("ident").hidden = true; $("send").hidden = false; $("status").textContent = "Online · an agent will reply shortly";
+      });
+      socket.on("message", bubble);
+    }
+    $("ident").onsubmit = e => { e.preventDefault(); start(); };
+    $("send").onsubmit = e => {
+      e.preventDefault();
+      const text = $("text").value.trim();
+      if (text && socket && chatId) { socket.emit("customer:message", { chatId, text }); $("text").value = ""; }
+    };
+    if (legs.length && $("phone").value) start();
+  })();
+  </script>
+</body>
+</html>
