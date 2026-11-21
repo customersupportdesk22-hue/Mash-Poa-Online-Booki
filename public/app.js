@@ -25,7 +25,11 @@ const photo = r => "/" + (PHOTO[r.destination] || "hero") + ".jpg";
 const logoImg = h => `<img src="/logo.png" alt="Mash Poa" style="height:${h}px;width:auto;display:block">`;
 let cfg = null;
 async function routes() {
-  if (!cfg) { const r = await fetch("/api/booking-config"); cfg = await r.json(); }
+  if (!cfg) {
+    let cached = null; try { cached = JSON.parse(localStorage.getItem("mp_cfg")); } catch {}
+    const load = async () => { const r = await fetch("/api/booking-config?light=1"); const d = await r.json(); try { localStorage.setItem("mp_cfg", JSON.stringify(d)); } catch {} return d; };
+    if (cached && cached.routes) { cfg = cached; load().then(d => { cfg = d; }).catch(() => {}); } else { cfg = await load(); }
+  }
   return (cfg.routes || []).filter(r => r.active !== false);
 }
 
@@ -78,7 +82,7 @@ async function viewHome() {
   </form></div>
   <section class="section"><div class="wrap">
     <h2>Top routes</h2><p class="sub">Explore popular routes served by Mash Poa</p>
-    <div class="route-grid">${feats.map((r, i) => `<a class="route-card" data-link href="/booking/${todayIso()}?from=${encodeURIComponent(r.origin)}&to=${encodeURIComponent(r.destination)}"><div class="route-img" style="background-image:url(${photo(r)})"><span class="badge">${esc(r.destination)}</span></div><div class="route-body"><h3>${esc(r.origin)} → ${esc(r.destination)}</h3><span>Search buses <b>→</b></span></div></a>`).join("")}</div>
+    <div class="route-grid">${feats.map((r, i) => `<a class="route-card" data-link href="/booking/${todayIso()}?from=${encodeURIComponent(r.origin)}&to=${encodeURIComponent(r.destination)}"><div class="route-img"><img src="${photo(r)}" alt="${esc(r.destination)}" width="640" height="420" ${i < 2 ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async"><span class="badge">${esc(r.destination)}</span></div><div class="route-body"><h3>${esc(r.origin)} → ${esc(r.destination)}</h3><span>Search buses <b>→</b></span></div></a>`).join("")}</div>
   </div></section>
   <section class="section"><div class="wrap"><div class="features">
     <div class="feature"><i style="background:#fde4e4">🚌</i><h3>Top-tier service</h3><p>A travel experience shaped around comfort, punctuality and service on every trip.</p></div>
@@ -134,6 +138,7 @@ async function viewHome() {
       if (!ret || ret < date) { $("#feedback").textContent = "Choose a return date on or after your departure date."; return; }
       if (!rs.some(r => r.origin === to && r.destination === from)) { $("#feedback").textContent = `There is no return bus from ${to} to ${from}. Try a one way trip or another route.`; return; }
     }
+    fetch("/api/schedules?" + new URLSearchParams({ from, to, date })).then(r => r.json()).then(t => { try { sessionStorage.setItem("mp_s:" + from + "|" + to + "|" + date, JSON.stringify(t)); } catch {} }).catch(() => {});
     store.set("mp_search", { from, to, date, round, ret });
     store.del("mp_out");
     go(`/booking/${date}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${round ? "&return=" + ret : ""}`);
@@ -148,6 +153,7 @@ function renderFooter(rs) {
 async function viewResults() {
   const date = location.pathname.split("/")[2] || todayIso();
   const q = new URLSearchParams(location.search), from = q.get("from") || "", to = q.get("to") || "";
+  if (!from || !to) { go("/", true); return; }
   document.title = `${from} to ${to} bus tickets – Mash Poa`;
   const isRet = q.get("leg") === "return", retDate = q.get("return") || "";
   const out0 = store.get("mp_out");
@@ -168,22 +174,36 @@ async function viewResults() {
   $("#next").onclick = () => go(url(addDays(date, 1)));
   $$("[data-d]").forEach(b => b.onclick = () => go(url(b.dataset.d)));
   const list = $("#buses");
-  let trips = [];
-  try {
-    const r = await fetch("/api/schedules?" + new URLSearchParams({ from, to, date }));
-    trips = await r.json(); if (!r.ok) throw Error(trips.error || "Could not load buses.");
-  } catch (e) { $("#count").textContent = ""; list.innerHTML = `<div class="empty"><b>We could not load buses</b>${esc(e.message)}</div>`; return; }
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-  trips = trips.filter(t => date !== todayIso() || mins(t.time) > nowMin).sort((a, b) => mins(a.time) - mins(b.time));
-  $("#count").textContent = `${trips.length} bus${trips.length === 1 ? "" : "es"} available`;
-  if (!trips.length) { list.innerHTML = `<div class="empty"><b>No buses for this date</b>Try another day from the date bar, or ask live chat for help.</div>`; return; }
-  list.innerHTML = trips.map(t => `<article class="bus">
+  const note = store.get("mp_note"); store.del("mp_note");
+  const noteHtml = note ? `<div class="note">${esc(note)}</div>` : "";
+  const ck = "mp_s:" + from + "|" + to + "|" + date;
+  const paintTrips = all => {
+    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+    const trips = all.filter(t => date !== todayIso() || mins(t.time) > nowMin).sort((a, b) => mins(a.time) - mins(b.time));
+    if (!trips.length && date === todayIso() && all.length) {
+      store.set("mp_note", "Today's buses have already left. Showing tomorrow's buses.");
+      go(url(addDays(date, 1)), true); return;
+    }
+    $("#count").textContent = `${trips.length} bus${trips.length === 1 ? "" : "es"} available`;
+    if (!trips.length) { list.innerHTML = noteHtml + `<div class="empty"><b>No buses for this date</b>Try another day from the date bar, or <a href="/chat.html" style="color:var(--red);font-weight:700">chat with support</a>.</div>`; return; }
+    list.innerHTML = noteHtml + trips.map(t => `<article class="bus">
     <div class="l t">${esc(t.time)}<small>${esc(longDate(t.date))} · ${esc(t.route.origin)}</small>${t.availableSeats ? `<span class="seats-left">${t.availableSeats} seat${t.availableSeats === 1 ? "" : "s"} left</span>` : `<span class="seats-left">Sold out</span>`}</div>
     <div class="mid"><b>Route: ${esc(t.route.origin)} – ${esc(t.route.destination)}</b><i></i>${esc(t.duration || "")}</div>
     ${t.arrival ? `<div class="t r" style="text-align:right;display:none">${esc(t.arrival)}</div>` : ""}
     <div class="price"><div>Normal<b>${ksh(t.fare_kes)}</b></div><button class="btn sm" data-id="${esc(t._id)}" ${t.availableSeats ? "" : "disabled"}>Select seats</button></div>
   </article>`).join("");
-  $$("[data-id]", list).forEach(b => b.onclick = () => openSeats(trips.find(t => t._id === b.dataset.id), null, isRet ? out0.seats.length : 0));
+    $$("[data-id]", list).forEach(b => b.onclick = () => openSeats(trips.find(t => t._id === b.dataset.id), null, isRet ? out0.seats.length : 0));
+  };
+  // show something instantly: last result if we have one, otherwise placeholders
+  let cached = null; try { cached = JSON.parse(sessionStorage.getItem(ck)); } catch {}
+  if (cached) paintTrips(cached);
+  else { $("#count").textContent = "Searching…"; list.innerHTML = noteHtml + '<div class="skel"><i></i><i></i><i></i></div>'.repeat(3); }
+  try {
+    const r = await fetch("/api/schedules?" + new URLSearchParams({ from, to, date }));
+    const fresh = await r.json(); if (!r.ok) throw Error(fresh.error || "Could not load buses.");
+    try { sessionStorage.setItem(ck, JSON.stringify(fresh)); } catch {}
+    paintTrips(fresh);
+  } catch (e) { if (!cached) { $("#count").textContent = ""; list.innerHTML = `<div class="empty"><b>We could not load buses</b>${esc(e.message)}</div>`; } }
 }
 
 /* ---------- bottom sheets: seats, boarding & drop-off ---------- */
@@ -315,7 +335,7 @@ function viewCheckout() {
       <div><label>Document type <em>*</em></label><select class="in" name="docType">${["National ID", "Passport", "Alien ID"].map(x => `<option ${p.docType === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
       <div><label>Document number <em>*</em></label><input class="in" name="docNumber" value="${esc(p.docNumber)}" placeholder="Enter document number"></div>
       <div><label>Nationality <em>*</em></label><select class="in" name="nationality"><option value="">Select nationality</option>${NATIONS.map(x => `<option ${p.nationality === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
-      <div><label>Passenger phone <em>*</em></label><div class="phone"><select class="in" name="code">${CODES.map(([c, n]) => `<option value="${c}" ${p.code === c ? "selected" : ""}>${c} ${n}</option>`).join("")}</select><input class="in" name="phone" inputmode="tel" value="${esc(p.phone)}" placeholder="712 345 678"></div></div>
+      <div class="phone-wrap"><label>Passenger phone <em>*</em></label><div class="phone"><select class="in" name="code">${CODES.map(([c, n]) => `<option value="${c}" ${p.code === c ? "selected" : ""}>${c} ${n}</option>`).join("")}</select><input class="in" name="phone" inputmode="tel" value="${esc(p.phone)}" placeholder="712 345 678"></div></div>
       <div class="full"><label>Ticket email <em>*</em></label><input class="in" name="email" type="email" value="${esc(p.email)}" placeholder="you@example.com" autocomplete="email"></div>
       <div class="full"><div class="err" id="err${i}"></div><button class="btn dark sm savepax" data-i="${i}">Save passenger</button></div></div></div>`;
   };

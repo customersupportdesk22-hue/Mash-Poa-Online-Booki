@@ -2,47 +2,43 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#e3221c">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#131a2a">
   <title>Live chat – Mash Poa</title>
+  <link rel="icon" href="/logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body class="chat-page">
-  <header class="site-header">
-    <div class="wrap">
-      <a class="logo" href="/" aria-label="Mash Poa home"><img src="/logo.png" alt="Mash Poa"></a>
-      <div class="header-actions"><a class="btn sm ghost" href="/">Book a bus</a></div>
-    </div>
-  </header>
+  <div class="capp" id="capp">
+    <header class="chead">
+      <a class="cback" href="/" aria-label="Back to booking">‹</a>
+      <img class="cav" src="/logo.png" alt="Mash Poa">
+      <div class="ctitle"><b>Mash Poa Support</b><small id="status">Booking help · Chat with our team</small></div>
+    </header>
 
-  <main class="chatwrap">
-    <section class="chatbox" id="chatbox">
-      <div class="chat-head">
-        <img src="/logo.png" alt="Mash Poa">
-        <div><b>Mash Poa Support</b><small id="status">Booking help · Chat with our team</small></div>
-      </div>
+    <div class="csum" id="summary" hidden></div>
 
-      <div id="summary" class="chat-summary" hidden></div>
+    <main class="cmsgs" id="msgs" aria-live="polite">
+      <div class="m in" id="greet"><span class="mt">Karibu! Enter your name and phone number below to start a booking support conversation.</span><span class="mm">Mash Poa</span></div>
+    </main>
 
-      <form id="ident" class="chat-ident">
-        <p>Enter your name and phone number to start a booking support conversation.</p>
-        <input class="in" id="name" placeholder="Your name" autocomplete="name">
-        <input class="in" id="phone" placeholder="Phone number, e.g. +254712345678" inputmode="tel" autocomplete="tel">
-        <button class="btn block" type="submit">Start conversation</button>
-        <div class="err" id="identErr"></div>
-      </form>
+    <form id="ident" class="cident">
+      <input class="in" id="name" placeholder="Your name" autocomplete="name" enterkeyhint="next">
+      <input class="in" id="phone" placeholder="Phone, e.g. +254712345678" inputmode="tel" autocomplete="tel" enterkeyhint="go">
+      <button class="btn block" type="submit">Start conversation</button>
+      <div class="err" id="identErr"></div>
+    </form>
 
-      <div id="msgs" class="chat-msgs" aria-live="polite"></div>
-
-      <form id="send" class="chat-send" hidden>
-        <input class="in" id="text" placeholder="Write a message…" autocomplete="off">
-        <button class="btn" type="submit">Send</button>
-      </form>
-    </section>
-  </main>
+    <form id="send" class="csend" hidden>
+      <input class="in" id="text" placeholder="Type a message…" autocomplete="off" enterkeyhint="send">
+      <button class="sendbtn" type="submit" aria-label="Send">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M3.4 20.4 21 12 3.4 3.6l-.1 6.5L15 12 3.3 13.9z"/></svg>
+      </button>
+    </form>
+  </div>
 
   <script>window.MashPoaChat = true;</script>
   <script src="/socket.io/socket.io.js"></script>
@@ -52,54 +48,98 @@
     const ksh = n => "Ksh " + Number(n || 0).toLocaleString("en-KE");
     const logo = '<img class="card-logo" src="/logo.png" alt="Mash Poa">';
     const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const clock = t => new Date(t || Date.now()).toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const dayLabel = t => { const d = new Date(t), n = new Date(), y = new Date(n - 864e5); const same = (a, b) => a.toDateString() === b.toDateString(); return same(d, n) ? "Today" : same(d, y) ? "Yesterday" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); };
+    const TICK = '<svg viewBox="0 0 18 12" width="16" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6.5 4.5 10 11 2"/><path d="M7 9.5 8 10 15 2"/></svg>';
+    const ONE = '<svg viewBox="0 0 18 12" width="16" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5 6.5 10 14 2"/></svg>';
+
+    const msgs = $("msgs");
     let saved = null;
     try { saved = JSON.parse(sessionStorage.getItem("mp_booking")); } catch {}
     const legs = saved ? (saved.bookings || (saved.ref ? [saved] : [])) : [];
-    let socket = null, chatId = null;
+    let socket = null, chatId = null, lastDay = "";
+    const byCid = new Map(), byId = new Map();
 
+    /* ---- keep the typing box above the keyboard ---- */
+    const app = $("capp");
+    const fit = () => {
+      const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      app.style.height = h + "px";
+      window.scrollTo(0, 0);
+      msgs.scrollTop = msgs.scrollHeight;
+    };
+    if (window.visualViewport) { visualViewport.addEventListener("resize", fit); visualViewport.addEventListener("scroll", fit); }
+    window.addEventListener("resize", fit);
+    fit();
+    const toEnd = () => { msgs.scrollTop = msgs.scrollHeight; };
+
+    /* ---- booking summary (collapsible so it never eats the screen) ---- */
     if (legs.length) {
-      $("summary").hidden = false;
-      const total = legs.reduce((n, l) => n + Number(l.amount || 0), 0);
-      $("summary").innerHTML = '<div class="sum-top">' + logo + '<span class="pill">Booking received</span></div>' +
+      const total = legs.reduce((n, l) => n + Number(l.amount || 0), 0), s = $("summary");
+      s.hidden = false;
+      s.innerHTML = '<button type="button" class="sumbar" id="sumbar"><span>' + logo + '</span><span class="sumtxt"><b>Booking received · ' + ksh(total) + '</b><small>' + legs.map(l => esc(l.from) + " → " + esc(l.to)).join(" · ") + '</small></span><i id="chev">⌄</i></button>' +
+        '<div class="sumbody" id="sumbody" hidden>' +
         legs.map((l, i) => '<div class="sum-line"><b>' + (legs.length > 1 ? (i ? "Return" : "Outbound") + " · " : "") + esc(l.from) + " → " + esc(l.to) + '</b><span>' + esc(l.date) + " · " + esc(l.time) + " · Seat " + esc((l.seats || []).join(", ")) + '</span><small>Ref ' + esc(l.ref) + " · " + ksh(l.amount) + '</small></div>').join("") +
-        '<div class="sum-total"><span>Total to pay</span><b>' + ksh(total) + '</b></div>' +
-        '<p class="hint">An agent will send official payment details here. We never ask for your M-PESA PIN.</p>';
+        '<p class="hint">An agent will send official payment details here. We never ask for your M-PESA PIN.</p></div>';
+      $("sumbar").onclick = () => { const b = $("sumbody"); b.hidden = !b.hidden; $("chev").textContent = b.hidden ? "⌄" : "⌃"; setTimeout(fit, 0); };
       $("name").value = saved.name || "";
       $("phone").value = saved.phone || "";
     }
 
-    function bubble(msg) {
-      const d = document.createElement("div");
-      if (msg.type === "payment" && msg.payment) {
-        const p = msg.payment;
-        d.className = "m card-msg";
-        d.innerHTML = logo + '<h4>Official payment instructions</h4>' +
+    function dayDivider(t) {
+      const d = dayLabel(t);
+      if (d === lastDay) return;
+      lastDay = d;
+      const el = document.createElement("div"); el.className = "dday"; el.textContent = d; msgs.appendChild(el);
+    }
+    const stateHtml = m => {
+      if (m.from !== "customer") return "";
+      if (m.pending) return '<span class="st">Sending…</span>';
+      return m.status === "seen" ? '<span class="st seen">' + TICK + ' Seen</span>' : '<span class="st">' + TICK + ' Delivered</span>';
+    };
+    function paint(el, m) {
+      let body;
+      if (m.type === "payment" && m.payment) {
+        const p = m.payment;
+        el.classList.add("card-msg");
+        body = logo + '<h4>Official payment instructions</h4>' +
           '<div class="kv"><span>Pay via</span><b>' + esc(String(p.type || "").toUpperCase()) + '</b></div>' +
           '<div class="kv"><span>' + (p.type === "paybill" ? "Business number" : p.type === "till" ? "Till number" : p.type === "bank" ? "Account" : "Phone number") + '</span><b>' + esc(p.number) + '</b></div>' +
           (p.account ? '<div class="kv"><span>Account</span><b>' + esc(p.account) + '</b></div>' : "") +
           '<div class="kv"><span>Name</span><b>' + esc(p.accountName) + '</b></div>' +
           (p.bookingRef ? '<div class="kv"><span>Booking</span><b>' + esc(p.bookingRef) + '</b></div>' : "") +
           '<div class="kv amt"><span>Amount</span><b>' + ksh(p.amount) + '</b></div>';
-      } else if (msg.type === "ticket" && msg.ticket) {
-        const t = msg.ticket;
-        d.className = "m card-msg ticket";
-        d.innerHTML = logo + '<h4>Ticket ' + esc(t.ticketNo) + '</h4>' +
+      } else if (m.type === "ticket" && m.ticket) {
+        const t = m.ticket;
+        el.classList.add("card-msg", "ticket");
+        body = logo + '<h4>Ticket ' + esc(t.ticketNo) + '</h4>' +
           '<div class="kv"><span>Route</span><b>' + esc(t.from) + " → " + esc(t.to) + '</b></div>' +
           '<div class="kv"><span>Departure</span><b>' + esc(t.date) + " " + esc(t.time) + '</b></div>' +
           '<div class="kv"><span>Seats</span><b>' + esc((t.seats || []).join(", ")) + '</b></div>' +
           '<div class="kv"><span>Passengers</span><b>' + esc((t.passengers || []).map(p => p.name).join(", ")) + '</b></div>' +
           '<div class="kv amt"><span>Paid</span><b>' + ksh(t.amount) + '</b></div>';
-      } else if (msg.type === "booking" && msg.booking) {
-        d.className = "m me";
-        d.textContent = "Booking request " + msg.booking.ref;
+      } else if (m.type === "booking" && m.booking) {
+        body = '<span class="mt">Booking request ' + esc(m.booking.ref) + '</span>';
       } else {
-        d.className = "m" + (msg.from === "customer" ? " me" : "");
-        d.textContent = msg.text || "";
+        body = '<span class="mt">' + esc(m.text || "") + '</span>';
       }
-      $("msgs").appendChild(d);
-      $("msgs").scrollTop = $("msgs").scrollHeight;
-      window.scrollTo(0, document.body.scrollHeight);
+      el.innerHTML = body + '<span class="mm">' + clock(m.at) + (m.from === "customer" ? " " + stateHtml(m) : "") + '</span>';
     }
+    function bubble(m, fromSocket) {
+      if (m.id && byId.has(m.id)) return;
+      if (m.cid && byCid.has(m.cid)) { const el = byCid.get(m.cid); Object.assign(m, { pending: false }); byId.set(m.id, { el, m }); paint(el, m); return; }
+      dayDivider(m.at);
+      const el = document.createElement("div");
+      el.className = "m " + (m.from === "customer" ? "out" : "in");
+      paint(el, m);
+      msgs.appendChild(el);
+      if (m.id) byId.set(m.id, { el, m });
+      if (m.cid) byCid.set(m.cid, el);
+      toEnd();
+      if (fromSocket && m.from !== "customer") markSeen();
+    }
+    function markSeen() { if (socket && chatId && document.visibilityState === "visible") socket.emit("customer:seen", chatId); }
+    document.addEventListener("visibilitychange", markSeen);
 
     function start() {
       const phone = $("phone").value.trim(), name = $("name").value.trim();
@@ -110,20 +150,31 @@
       socket.on("connect", () => socket.emit("customer:start", { name, phone, bookingRef: legs[0] ? legs[0].ref : "" }));
       socket.on("connect_error", () => { $("status").textContent = "Connection problem. Retrying…"; });
       socket.on("chat:ready", d => {
-        chatId = d.chatId; $("msgs").innerHTML = "";
-        (d.messages || []).forEach(bubble);
+        chatId = d.chatId;
+        $("greet").remove(); msgs.querySelectorAll(".m,.dday").forEach(n => n.remove()); byId.clear(); lastDay = "";
+        (d.messages || []).forEach(m => bubble(m, false));
         const sent = new Set((d.messages || []).filter(m => m.type === "booking").map(m => m.booking.ref));
         legs.forEach(l => { if (!sent.has(l.ref)) socket.emit("customer:booking", { chatId, ref: l.ref, from: l.from, to: l.to, date: l.date, time: l.time, seats: l.seats, amount: l.amount }); });
         $("ident").hidden = true; $("send").hidden = false; $("status").textContent = "Online · an agent will reply shortly";
+        fit(); markSeen();
       });
-      socket.on("message", bubble);
+      socket.on("message", m => bubble(m, true));
+      socket.on("status", d => {
+        byId.forEach(({ el, m }) => { if (m.from === "customer" && m.status !== "seen") { m.status = "seen"; paint(el, m); } });
+      });
     }
     $("ident").onsubmit = e => { e.preventDefault(); start(); };
     $("send").onsubmit = e => {
       e.preventDefault();
       const text = $("text").value.trim();
-      if (text && socket && chatId) { socket.emit("customer:message", { chatId, text }); $("text").value = ""; }
+      if (!text || !socket || !chatId) return;
+      const cid = "c" + Date.now() + Math.random().toString(36).slice(2, 6);
+      const m = { from: "customer", text, at: Date.now(), pending: true, cid };
+      bubble(m, false);
+      socket.emit("customer:message", { chatId, text, cid });
+      $("text").value = ""; $("text").focus();
     };
+    $("text").addEventListener("focus", () => setTimeout(() => { fit(); toEnd(); }, 250));
     if (legs.length && $("phone").value) start();
   })();
   </script>

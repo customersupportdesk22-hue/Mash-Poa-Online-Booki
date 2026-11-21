@@ -1,25 +1,19 @@
-(function(){
-if(window.MashPoaChat)return;window.MashPoaChat=true;
-const style=document.createElement('style');style.textContent=`
-#mp-chat-launch{position:fixed;right:14px;bottom:14px;z-index:60;width:54px;height:54px;border:0;border-radius:50%;background:#e3221c;color:#fff;display:grid;place-items:center;padding:0;box-shadow:0 8px 22px #e3221c55}#mp-chat-launch[hidden]{display:none}#mp-chat-launch svg{width:26px;height:26px}.m-logo{height:30px;width:auto;display:block;margin-bottom:8px}.m.cardm b{display:block}
-#mp-chat-box{position:fixed;right:16px;bottom:82px;width:min(370px,calc(100vw - 24px));height:min(550px,calc(100dvh - 110px));background:#f7f8f3;border:1px solid #dfe7dc;border-radius:16px;z-index:9999;display:none;grid-template-rows:auto auto 1fr auto;overflow:hidden;box-shadow:0 18px 55px #131a2a30;font:14px system-ui}
-#mp-chat-box.open{display:grid}#mp-chat-head{background:#131a2a;color:#fff;padding:14px;display:flex;justify-content:space-between;align-items:center}#mp-chat-head small{display:block;color:#d6e2d8;font-weight:400;margin-top:3px}#mp-chat-head button{background:none;border:0;color:#fff;font-size:24px}
-#mp-chat-ident{padding:10px;background:#fff;display:grid;grid-template-columns:1fr 1fr;gap:7px;border-bottom:1px solid #e5e9e2}#mp-chat-ident input{min-width:0;padding:9px;border:1px solid #e5e9e2;border-radius:7px;font:12px system-ui}#mp-chat-ident button{grid-column:1/-1;background:#eaf0e4;border:0;border-radius:7px;padding:9px;color:#131a2a;font-weight:700}
-#mp-chat-msgs{overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}#mp-chat-msgs .m{max-width:85%;white-space:pre-wrap;background:#fff;border:1px solid #e5e9e2;border-radius:11px;padding:10px;font-size:12px;line-height:1.5}#mp-chat-msgs .m.me{align-self:flex-end;background:#131a2a;color:#fff}#mp-chat-msgs .m small{display:block;margin-top:6px;opacity:.8}
-#mp-chat-send{display:flex;gap:7px;padding:10px;background:#fff;border-top:1px solid #e5e9e2}#mp-chat-send input{flex:1;min-width:0;border:1px solid #e5e9e2;border-radius:8px;padding:11px;font-size:12px}#mp-chat-send button{border:0;border-radius:8px;background:#131a2a;color:#fff;padding:0 14px;font-weight:800}
-`;document.head.appendChild(style);
-const box=document.createElement('section');box.id='mp-chat-box';box.innerHTML='<div id="mp-chat-head"><div><img src="/logo.png" alt="Mash Poa" style="height:30px;width:auto;display:block;margin-bottom:6px;background:#fff;border-radius:6px;padding:2px 6px"><b>Mash Poa Support</b><small>Booking help · Chat with our team</small></div><button id="mp-chat-close" aria-label="Close">×</button></div><div id="mp-chat-ident"><input id="mp-chat-name" placeholder="Your name"><input id="mp-chat-phone" placeholder="Phone number"><button id="mp-chat-start">Start conversation</button></div><div id="mp-chat-msgs"><div class="m">Karibu! Enter your name and phone number to start a booking support conversation.</div></div><form id="mp-chat-send"><input id="mp-chat-text" placeholder="Write a message..." disabled><button disabled>Send</button></form>';
-document.body.appendChild(box);const launch=document.createElement('button');launch.id='mp-chat-launch';launch.setAttribute('aria-label','Chat with Mash Poa');launch.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z"/></svg>';document.body.appendChild(launch);
-let socket=null,chatId=null,pendingBooking=null;const $=id=>document.getElementById(id);function open(){box.classList.add('open')}function close(){box.classList.remove('open')}launch.onclick=open;$('mp-chat-close').onclick=close;
-function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function render(msg){const d=document.createElement('div');d.className='m '+(msg.from==='customer'?'me':'');d.textContent=msg.text||'';
-if(msg.type==='payment'&&msg.payment){const p=msg.payment;d.className='m cardm';d.innerHTML='<img class="m-logo" src="/logo.png" alt="Mash Poa"><b>Official payment instructions</b>'+esc(String(p.type||'').toUpperCase())+' '+esc(p.number)+(p.account?'\nAccount '+esc(p.account):'')+'\nName: '+esc(p.accountName)+'\n<b>KES '+esc(p.amount)+'</b>';}
-if(msg.type==='ticket'&&msg.ticket){const t=msg.ticket;d.className='m cardm';d.innerHTML='<img class="m-logo" src="/logo.png" alt="Mash Poa"><b>Ticket '+esc(t.ticketNo)+'</b>'+esc(t.from)+' → '+esc(t.to)+'\n'+esc(t.date)+' '+esc(t.time)+'\nSeats: '+esc((t.seats||[]).join(', '))+'\n<b>KES '+esc(t.amount)+'</b>';}
-$('mp-chat-msgs').appendChild(d);$('mp-chat-msgs').scrollTop=$('mp-chat-msgs').scrollHeight;}
-$('mp-chat-start').onclick=()=>{const phone=$('mp-chat-phone').value.trim();if(!phone)return alert('Enter your phone number.');if(!window.io)return alert('Chat service is not ready. Please refresh.');socket=io();socket.on('connect',()=>socket.emit('customer:start',{name:$('mp-chat-name').value,phone,bookingRef:pendingBooking?.ref||''}));socket.on('chat:ready',d=>{chatId=d.chatId;$('mp-chat-msgs').innerHTML='';d.messages.forEach(render);if(pendingBooking)socket.emit('customer:booking',{...pendingBooking});$('mp-chat-text').disabled=false;$('mp-chat-send').querySelector('button').disabled=false;$('mp-chat-start').textContent='Connected';});socket.on('message',render);};
-$('mp-chat-send').onsubmit=e=>{e.preventDefault();const text=$('mp-chat-text').value.trim();if(text&&socket&&chatId){socket.emit('customer:message',{chatId,text});$('mp-chat-text').value='';}};
-function sync(){const hide=/^\/(checkout|chat)/.test(location.pathname)||!!document.querySelector('.sheet-back');launch.hidden=hide;if(hide)close();}
-['pushState','replaceState'].forEach(k=>{const o=history[k];history[k]=function(){const r=o.apply(this,arguments);sync();return r;};});
-window.addEventListener('popstate',sync);new MutationObserver(sync).observe(document.body,{childList:true});sync();
-window.addEventListener('mashpoa:booking',e=>{pendingBooking=e.detail||null;open();if(pendingBooking){$('mp-chat-name').value=pendingBooking.name||'';$('mp-chat-phone').value=pendingBooking.phone||'';$('mp-chat-start').click();}});
+/* Floating chat button: opens the full-screen live chat page. */
+(function () {
+  if (window.MashPoaChat) return;
+  var css = document.createElement("style");
+  css.textContent = "#mp-chat-launch{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:60;width:54px;height:54px;border-radius:50%;background:#e3221c;color:#fff;display:grid;place-items:center;box-shadow:0 8px 22px #e3221c55;text-decoration:none;-webkit-tap-highlight-color:transparent}#mp-chat-launch[hidden]{display:none}#mp-chat-launch svg{width:26px;height:26px}";
+  document.head.appendChild(css);
+  var a = document.createElement("a");
+  a.id = "mp-chat-launch"; a.href = "/chat.html"; a.setAttribute("aria-label", "Live chat support");
+  a.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z"/></svg>';
+  document.body.appendChild(a);
+  function sync() { a.hidden = /^\/(checkout|chat)/.test(location.pathname) || !!document.querySelector(".sheet-back"); }
+  ["pushState", "replaceState"].forEach(function (k) {
+    var o = history[k];
+    history[k] = function () { var r = o.apply(this, arguments); sync(); return r; };
+  });
+  window.addEventListener("popstate", sync);
+  new MutationObserver(sync).observe(document.body, { childList: true });
+  sync();
 })();
