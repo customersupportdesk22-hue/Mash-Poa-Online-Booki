@@ -310,3 +310,7 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 .m.out.sel{box-shadow:0 0 0 2px #e3221c55}
 
 .sugg li .tag{float:right;font-size:10px;font-weight:700;color:var(--red);background:var(--red-l);border-radius:999px;padding:3px 8px;margin-left:8px}
+
+/* messages must never be squashed on top of each other */
+.cmsgs>*{flex:0 0 auto}
+.m.card-msg{overflow:visible}

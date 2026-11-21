@@ -172,7 +172,7 @@
       if (m.id) byId.set(m.id, { el, m });
       if (m.cid) byCid.set(m.cid, el);
       toEnd();
-      if (fromSocket && m.from !== "customer") markSeen();
+      if (fromSocket && m.from !== "customer") { markSeen(); if (legs.length && sumOpen) setSum(false); }
     }
     msgs.addEventListener("click", e => {
       const d = e.target.closest(".mdel");
