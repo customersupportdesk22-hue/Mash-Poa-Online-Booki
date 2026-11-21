@@ -96,7 +96,7 @@ async function viewHome() {
   const places = [...new Set(rs.flatMap(r => [r.origin, r.destination]))].sort();
   const served = (f, t) => rs.some(r => r.origin === f && r.destination === t);
   const titleCase = v => String(v).trim().replace(/\s+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  const resolve = v => exact(places, v) || (String(v || "").trim().length >= 3 ? titleCase(v) : "");
+  const resolve = v => exact(places, v);
   // Type-ahead: nothing is listed until at least 3 letters are typed.
   const combo = (input, listEl, getList, onPick, badge) => {
     const hide = () => { listEl.hidden = true; input.setAttribute("aria-expanded", "false"); };
@@ -106,7 +106,7 @@ async function viewHome() {
       if (q.length < 3) { listEl.innerHTML = `<li class="hint-li">Type at least 3 letters to search</li>`; listEl.hidden = !document.activeElement || document.activeElement !== input; return; }
       const all = getList();
       const hits = all.filter(x => x.toLowerCase().includes(q)).sort((a, b) => (b.toLowerCase().startsWith(q) - a.toLowerCase().startsWith(q)) || all.indexOf(a) - all.indexOf(b)).slice(0, 8);
-      listEl.innerHTML = hits.length ? hits.map(h => `<li role="option" data-v="${esc(h)}">${esc(h)}${badge && badge(h) ? `<span class="tag">${esc(badge(h))}</span>` : ""}</li>`).join("") : `<li role="option" data-v="${esc(titleCase(input.value))}">${esc(titleCase(input.value))}<span class="tag">Chat to book</span></li>`;
+      listEl.innerHTML = hits.length ? hits.map(h => `<li role="option" data-v="${esc(h)}">${esc(h)}${badge && badge(h) ? `<span class="tag">${esc(badge(h))}</span>` : ""}</li>`).join("") : `<li class="hint-li">No matching place. Check the spelling.</li>`;
       listEl.hidden = false; input.setAttribute("aria-expanded", "true");
     };
     input.addEventListener("input", show);
@@ -135,7 +135,7 @@ async function viewHome() {
   $("#search").onsubmit = e => {
     e.preventDefault();
     const from = resolve(fromEl.value), to = resolve(toEl.value), date = dateEl.value;
-    if (!from || !to) { $("#feedback").textContent = !from ? "Type at least 3 letters for where you are leaving from." : "Type at least 3 letters for where you are going to."; return; }
+    if (!from || !to) { $("#feedback").textContent = !from ? "Pick the place you are leaving from from the list. Type at least 3 letters." : "Pick the place you are going to from the list. Type at least 3 letters."; return; }
     if (from.toLowerCase() === to.toLowerCase()) { $("#feedback").textContent = "Leaving from and going to cannot be the same place."; return; }
     const ret = retEl.value;
     if (round && (!ret || ret < date)) { $("#feedback").textContent = "Choose a return date on or after your departure date."; return; }
