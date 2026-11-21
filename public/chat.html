@@ -73,6 +73,10 @@
     fit();
     const toEnd = () => { msgs.scrollTop = msgs.scrollHeight; };
 
+    let enq = null;
+    try { enq = JSON.parse(sessionStorage.getItem("mp_enquiry")); } catch {}
+    try { const k = JSON.parse(localStorage.getItem("mp_contact")); if (k) { if (!$("name").value) $("name").value = k.name || ""; if (!$("phone").value) $("phone").value = k.phone || ""; } } catch {}
+    const longD = d => { try { return new Date(d + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }); } catch { return d; } };
     /* ---- booking summary: open by default, folds away while typing ---- */
     let sumOpen = true;
     function setSum(open) {
@@ -81,6 +85,18 @@
       if (!full) return;
       full.hidden = !open; bar.hidden = open;
       setTimeout(fit, 0);
+    }
+    if (!legs.length && enq) {
+      const s = $("summary"); s.hidden = false;
+      const when = longD(enq.date) + (enq.round && enq.ret ? " · returning " + longD(enq.ret) : "");
+      s.innerHTML =
+        '<div class="sumfull" id="sumfull"><div class="sum-top">' + logo + '<span class="pill">Trip request</span></div>' +
+        '<div class="sum-line"><b>' + esc(enq.from) + " → " + esc(enq.to) + '</b><span>' + esc(when) + '</span></div>' +
+        '<p class="hint">This trip is not listed online yet. Chat with us and we will arrange your booking.</p>' +
+        '<button type="button" class="sumhide" id="sumhide">Hide details ⌃</button></div>' +
+        '<button type="button" class="sumbar" id="sumbar" hidden><span>' + logo + '</span><span class="sumtxt"><b>Trip request</b><small>' + esc(enq.from) + " → " + esc(enq.to) + '</small></span><i>⌄</i></button>';
+      $("sumhide").onclick = () => setSum(false);
+      $("sumbar").onclick = () => setSum(true);
     }
     if (legs.length) {
       const total = legs.reduce((n, l) => n + Number(l.amount || 0), 0), s = $("summary");
@@ -172,6 +188,7 @@
       const phone = $("phone").value.trim(), name = $("name").value.trim();
       if (phone.replace(/\D/g, "").length < 9) { $("identErr").textContent = "Enter a valid phone number."; return; }
       if (!window.io) { $("identErr").textContent = "Chat service is not ready. Please refresh this page."; return; }
+      try { localStorage.setItem("mp_contact", JSON.stringify({ name, phone })); } catch {}
       $("identErr").textContent = ""; $("status").textContent = "Connecting…";
       socket = io();
       socket.on("connect", () => socket.emit("customer:start", { name, phone, bookingRef: legs[0] ? legs[0].ref : "" }));
@@ -184,6 +201,11 @@
         legs.forEach(l => { if (!sent.has(l.ref)) socket.emit("customer:booking", { chatId, ref: l.ref, from: l.from, to: l.to, date: l.date, time: l.time, seats: l.seats, amount: l.amount }); });
         $("ident").hidden = true; $("send").hidden = false; $("status").textContent = "Online · an agent will reply shortly";
         fit(); markSeen();
+        const sig = enq ? [enq.from, enq.to, enq.date, enq.ret].join("|") : "";
+        if (!legs.length && enq && sessionStorage.getItem("mp_enq_sent") !== sig) {
+          sessionStorage.setItem("mp_enq_sent", sig);
+          sendText("Hello Mash Poa, I would like to book a bus from " + enq.from + " to " + enq.to + " on " + longD(enq.date) + (enq.round && enq.ret ? ", returning on " + longD(enq.ret) : "") + ". I could not find this trip on the website. Please help me with the booking.");
+        }
       });
       socket.on("message", m => bubble(m, true));
       socket.on("message:deleted", d => {
@@ -200,16 +222,13 @@
       });
     }
     $("ident").onsubmit = e => { e.preventDefault(); start(); };
-    $("send").onsubmit = e => {
-      e.preventDefault();
-      const text = $("text").value.trim();
+    function sendText(text) {
       if (!text || !socket || !chatId) return;
       const cid = "c" + Date.now() + Math.random().toString(36).slice(2, 6);
-      const m = { from: "customer", text, at: Date.now(), pending: true, cid };
-      bubble(m, false);
+      bubble({ from: "customer", text, at: Date.now(), pending: true, cid }, false);
       socket.emit("customer:message", { chatId, text, cid });
-      $("text").value = ""; $("text").focus();
-    };
+    }
+    $("send").onsubmit = e => { e.preventDefault(); const text = $("text").value.trim(); if (!text) return; sendText(text); $("text").value = ""; $("text").focus(); };
     $("text").addEventListener("focus", () => { if (legs.length && sumOpen) setSum(false); setTimeout(() => { fit(); toEnd(); }, 250); });
     if (legs.length && $("phone").value) start();
   })();

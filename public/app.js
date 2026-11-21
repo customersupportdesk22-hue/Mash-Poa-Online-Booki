@@ -93,16 +93,20 @@ async function viewHome() {
   const fromEl = $("#from"), toEl = $("#to");
   const destsFor = from => [...new Set(rs.filter(r => !from || r.origin === from).map(r => r.destination))].sort();
   const exact = (list, v) => list.find(x => x.toLowerCase() === String(v || "").trim().toLowerCase()) || "";
+  const places = [...new Set(rs.flatMap(r => [r.origin, r.destination]))].sort();
+  const served = (f, t) => rs.some(r => r.origin === f && r.destination === t);
+  const titleCase = v => String(v).trim().replace(/\s+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const resolve = v => exact(places, v) || (String(v || "").trim().length >= 3 ? titleCase(v) : "");
   // Type-ahead: nothing is listed until at least 3 letters are typed.
-  const combo = (input, listEl, getList, onPick) => {
+  const combo = (input, listEl, getList, onPick, badge) => {
     const hide = () => { listEl.hidden = true; input.setAttribute("aria-expanded", "false"); };
     const pick = v => { input.value = v; hide(); onPick && onPick(v); };
     const show = () => {
       const q = input.value.trim().toLowerCase();
       if (q.length < 3) { listEl.innerHTML = `<li class="hint-li">Type at least 3 letters to search</li>`; listEl.hidden = !document.activeElement || document.activeElement !== input; return; }
       const all = getList();
-      const hits = all.filter(x => x.toLowerCase().includes(q)).sort((a, b) => (b.toLowerCase().startsWith(q) - a.toLowerCase().startsWith(q)) || a.localeCompare(b)).slice(0, 8);
-      listEl.innerHTML = hits.length ? hits.map(h => `<li role="option" data-v="${esc(h)}">${esc(h)}</li>`).join("") : `<li class="hint-li">No matching place. Check the spelling.</li>`;
+      const hits = all.filter(x => x.toLowerCase().includes(q)).sort((a, b) => (b.toLowerCase().startsWith(q) - a.toLowerCase().startsWith(q)) || all.indexOf(a) - all.indexOf(b)).slice(0, 8);
+      listEl.innerHTML = hits.length ? hits.map(h => `<li role="option" data-v="${esc(h)}">${esc(h)}${badge && badge(h) ? `<span class="tag">${esc(badge(h))}</span>` : ""}</li>`).join("") : `<li role="option" data-v="${esc(titleCase(input.value))}">${esc(titleCase(input.value))}<span class="tag">Chat to book</span></li>`;
       listEl.hidden = false; input.setAttribute("aria-expanded", "true");
     };
     input.addEventListener("input", show);
@@ -111,13 +115,12 @@ async function viewHome() {
     input.addEventListener("keydown", e => { if (e.key === "Enter" && !listEl.hidden) { const f = listEl.querySelector("[data-v]"); if (f) { e.preventDefault(); pick(f.dataset.v); } } });
     listEl.addEventListener("pointerdown", e => { const li = e.target.closest("[data-v]"); if (li) { e.preventDefault(); pick(li.dataset.v); } });
   };
-  combo(fromEl, $("#from-list"), () => origins, v => { if (!exact(destsFor(v), toEl.value)) toEl.value = ""; });
-  combo(toEl, $("#to-list"), () => destsFor(exact(origins, fromEl.value)));
+  combo(fromEl, $("#from-list"), () => places);
+  const toList = () => { const f = exact(places, fromEl.value); return places.filter(p => p !== f).sort((a, b) => (served(f, b) - served(f, a)) || a.localeCompare(b)); };
+  combo(toEl, $("#to-list"), toList, null, h => { const f = exact(places, fromEl.value); return f && !served(f, h) ? "Chat to book" : ""; });
   fromEl.value = saved.from || ""; toEl.value = saved.to || "";
   $("#swap").onclick = () => {
-    const a = exact(origins, fromEl.value), b = exact(destsFor(a), toEl.value) || exact(origins, toEl.value);
-    if (!b) return;
-    fromEl.value = b; toEl.value = destsFor(b).includes(a) ? a : "";
+    const a = fromEl.value; fromEl.value = toEl.value; toEl.value = a;
   };
   let round = !!saved.round;
   const retEl = $("#retdate");
@@ -131,13 +134,18 @@ async function viewHome() {
   syncRound();
   $("#search").onsubmit = e => {
     e.preventDefault();
-    const from = exact(origins, fromEl.value), to = exact(destsFor(from), toEl.value), date = dateEl.value;
-    if (!from || !to) { $("#feedback").textContent = !from ? "Type at least 3 letters and pick where you are leaving from." : "Pick a destination from the list. Only places Mash Poa travels to from " + from + " are shown."; return; }
+    const from = resolve(fromEl.value), to = resolve(toEl.value), date = dateEl.value;
+    if (!from || !to) { $("#feedback").textContent = !from ? "Type at least 3 letters for where you are leaving from." : "Type at least 3 letters for where you are going to."; return; }
+    if (from.toLowerCase() === to.toLowerCase()) { $("#feedback").textContent = "Leaving from and going to cannot be the same place."; return; }
     const ret = retEl.value;
-    if (round) {
-      if (!ret || ret < date) { $("#feedback").textContent = "Choose a return date on or after your departure date."; return; }
-      if (!rs.some(r => r.origin === to && r.destination === from)) { $("#feedback").textContent = `There is no return bus from ${to} to ${from}. Try a one way trip or another route.`; return; }
+    if (round && (!ret || ret < date)) { $("#feedback").textContent = "Choose a return date on or after your departure date."; return; }
+    if (!served(from, to) || (round && !served(to, from))) {
+      store.set("mp_enquiry", { from, to, date, round, ret: round ? ret : "", missing: !served(from, to) ? "outbound" : "return" });
+      $("#feedback").textContent = "We don't list this trip online yet. Opening live chat so we can book it for you…";
+      setTimeout(() => { location.href = "/chat.html"; }, 700);
+      return;
     }
+    store.del("mp_enquiry");
     fetch("/api/schedules?" + new URLSearchParams({ from, to, date })).then(r => r.json()).then(t => { try { sessionStorage.setItem("mp_s:" + from + "|" + to + "|" + date, JSON.stringify(t)); } catch {} }).catch(() => {});
     store.set("mp_search", { from, to, date, round, ret });
     store.del("mp_out");
