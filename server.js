@@ -16,7 +16,7 @@ const DB_NAME = process.env.MONGODB_DB || "mashpoa";
 app.disable("x-powered-by");
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: "64kb" }));
-app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
+app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"], maxAge: "7d", setHeaders: (res, p) => { if (/\.(html|js|css)$/.test(p)) res.setHeader("Cache-Control", "no-cache"); } }));
 app.get("/api/health", (_req, res) => res.json({ ok: true, service: "Mash Poa Online Booking", database: db ? "connected" : "memory-or-not-configured" }));
 
 let db = null;
@@ -24,19 +24,28 @@ let mongoClient = null;
 const memory = { settings: [], routes: [], schedules: [], bookings: [], chats: [] };
 let aiConfig = { enabled: false, model: "gemini-2.5-flash", notes: "" };
 const col = (name) => db ? db.collection(name) : null;
-async function all(name, sort = {}) { const c=col(name); return c ? c.find({}).sort(sort).toArray() : memory[name]; }
+const _cache = {};
+async function _all(name, sort = {}) { const c=col(name); return c ? c.find({}).sort(sort).toArray() : memory[name]; }
+async function all(name, sort = {}) {
+  if ((name === "routes" || name === "schedules") && !Object.keys(sort).length) {
+    const h = _cache[name]; if (h && Date.now() - h.t < 15000) return h.v;
+    const v = await _all(name, sort); _cache[name] = { t: Date.now(), v }; return v;
+  }
+  return _all(name, sort);
+}
 async function one(name, query) { const c=col(name); return c ? c.findOne(query) : memory[name].find(x=>Object.entries(query).every(([k,v])=>x[k]===v)) || null; }
 async function save(name, doc) {
+  delete _cache[name];
   const c=col(name);
   if(c) { const {_id,...data}=doc; await c.updateOne({_id},{$set:data},{upsert:true}); return doc; }
   const i=memory[name].findIndex(x=>x._id===doc._id); if(i<0) memory[name].push(doc); else memory[name][i]=doc; return doc;
 }
-async function remove(name,id) { const c=col(name); if(c) return c.deleteOne({_id:id}); memory[name]=memory[name].filter(x=>x._id!==id); }
+async function remove(name,id) { delete _cache[name]; const c=col(name); if(c) return c.deleteOne({_id:id}); memory[name]=memory[name].filter(x=>x._id!==id); }
 function admin(req,res,next) { if(!ADMIN_PASSWORD) return res.status(503).json({error:"Admin password is not configured. Set AGENT_PASSWORD in the hosting environment."}); if(req.get("x-admin-password")!==ADMIN_PASSWORD) return res.status(401).json({error:"Wrong password"}); next(); }
 const clip=(v,n=300)=>String(v??"").trim().slice(0,n);
 const id=()=>crypto.randomBytes(12).toString("hex");
 const safePayment=s=>({type:s?.type||"paybill",number:s?.number||"",account:s?.account||"",accountName:s?.accountName||"Mash Poa",paymentMode:s?.paymentMode||"admin",override:Number(s?.override)||0});
-app.get("/api/booking-config", async (_req,res)=>{res.json({configured:(await all("routes")).length>0, routes:await all("routes"), schedules:await all("schedules")});});
+app.get("/api/booking-config", async (req,res)=>{const routes=await all("routes");res.json({configured:routes.length>0, routes, schedules:req.query.light?[]:await all("schedules")});});
 app.get("/api/payment-settings", async (_req,res)=>res.json(safePayment(await one("settings",{_id:"global"}))));
 app.post("/api/admin/login",(req,res)=>{if(!ADMIN_PASSWORD)return res.status(503).json({ok:false,error:"Set AGENT_PASSWORD in hosting environment."});res.json({ok:req.get("x-admin-password")===ADMIN_PASSWORD});});
 app.get("/api/admin/settings",admin,async(_req,res)=>res.json(safePayment(await one("settings",{_id:"global"}))));
@@ -59,6 +68,12 @@ app.delete("/api/admin/routes/:id",admin,async(req,res)=>{await remove("routes",
 app.get("/api/admin/schedules",admin,async(_req,res)=>res.json(await all("schedules")));
 app.post("/api/admin/schedules",admin,async(req,res)=>{const p=req.body||{};if(!p.routeId||!p.date||!p.time||!Number.isInteger(Number(p.capacity))||Number(p.capacity)<1)return res.status(400).json({error:"Route, date, departure time and seat capacity are required."});const d={_id:p.id||id(),routeId:clip(p.routeId,80),date:clip(p.date,10),time:clip(p.time,10),capacity:Number(p.capacity),bus:clip(p.bus,40)||"Mash Poa Coach",active:p.active!==false};await save("schedules",d);res.json({ok:true,schedule:d});});
 app.delete("/api/admin/schedules/:id",admin,async(req,res)=>{await remove("schedules",clip(req.params.id,80));res.json({ok:true});});
+// Counter sales: mark seats as already sold so customers see them as occupied.
+async function resolveDeparture(scheduleId,date){const sid=clip(scheduleId,100);const t=await one("schedules",{_id:sid});if(!t)return null;if(t.recurring===true){const d=clip(date,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return null;return {schedule:t,effectiveId:t._id+"__"+d,date:d};}return {schedule:t,effectiveId:t._id,date:t.date};}
+function parseSeatList(txt,max){const out=new Set();for(const part of String(txt||"").split(/[,\s]+/).filter(Boolean)){const m=part.match(/^(\d+)(?:-(\d+))?$/);if(!m)return null;const a=Number(m[1]),b=m[2]?Number(m[2]):a;if(a<1||b<a||b>max)return null;for(let i=a;i<=b;i++)out.add(String(i));}return [...out];}
+app.get("/api/admin/seat-blocks",admin,async(req,res)=>{const d=await resolveDeparture(req.query.scheduleId,req.query.date);if(!d)return res.json([]);const list=(await all("bookings")).filter(b=>b.scheduleId===d.effectiveId&&b.status==="counter");res.json(list.map(b=>({ref:b.ref,seats:b.seats,note:b.note||"",createdAt:b.createdAt})));});
+app.post("/api/admin/seat-blocks",admin,async(req,res)=>{const p=req.body||{};const d=await resolveDeparture(p.scheduleId,p.date);if(!d)return res.status(400).json({error:"Choose a departure and a valid travel date."});const seats=parseSeatList(p.seats,Number(d.schedule.capacity));if(!seats||!seats.length)return res.status(400).json({error:"Enter seat numbers like 1,2,5-8 (between 1 and "+d.schedule.capacity+")."});const taken=(await all("bookings")).filter(b=>b.scheduleId===d.effectiveId&&b.status!=="cancelled").flatMap(b=>b.seats||[]);const clash=seats.filter(x=>taken.includes(x));if(clash.length)return res.status(409).json({error:"Already taken: seat "+clash.join(", ")+"."});const route=await one("routes",{_id:d.schedule.routeId});const ref="CTR-"+crypto.randomBytes(3).toString("hex").toUpperCase();const doc={_id:ref,ref,routeId:d.schedule.routeId,scheduleId:d.effectiveId,from:route?.origin||"",to:route?.destination||"",date:d.date,time:d.schedule.time,bus:d.schedule.bus,seats,passengers:[],amount:0,status:"counter",note:clip(p.note,120),createdAt:Date.now()};await save("bookings",doc);res.json({ok:true,block:{ref,seats}});});
+app.delete("/api/admin/seat-blocks/:ref",admin,async(req,res)=>{const b=await one("bookings",{_id:clip(req.params.ref,40)});if(!b||b.status!=="counter")return res.status(404).json({error:"Block not found."});await remove("bookings",b._id);res.json({ok:true});});
 app.get("/api/admin/bookings",admin,async(_req,res)=>res.json((await all("bookings",{createdAt:-1})).slice(0,300)));
 app.post("/api/bookings",async(req,res)=>{
  const p=req.body||{}; const route=await one("routes",{_id:clip(p.routeId,80)}); const requestedScheduleId=clip(p.scheduleId,100); let schedule=await one("schedules",{_id:requestedScheduleId}); if(!schedule&&requestedScheduleId.includes("__")){const splitAt=requestedScheduleId.lastIndexOf("__");const templateId=requestedScheduleId.slice(0,splitAt),travelDate=requestedScheduleId.slice(splitAt+2);const template=await one("schedules",{_id:templateId});if(template?.recurring===true&&travelDate.length===10&&travelDate[4]==="-"&&travelDate[7]==="-")schedule={...template,_id:requestedScheduleId,date:travelDate};}
@@ -82,7 +97,7 @@ app.get("/api/booking/:ref",async(req,res)=>{const b=await one("bookings",{ref:c
 const chats=new Map();
 async function loadChats(){try{const list=await all("chats");list.forEach(c=>chats.set(c._id,c));}catch(e){console.error("Chat load:",e.message);}}
 async function persistChat(c){try{await save("chats",c);}catch(e){console.error("Chat save:",e.message);}}
-function push(c,msg){msg.id=id();msg.at=Date.now();c.messages.push(msg);c.updatedAt=msg.at;if(msg.from==="customer")c.unread=(c.unread||0)+1;persistChat(c);io.to(c._id).emit("message",msg);io.of("/agent").emit("chat:update",publicChat(c));}
+function push(c,msg){msg.id=id();msg.at=Date.now();msg.status="delivered";c.messages.push(msg);c.updatedAt=msg.at;if(msg.from==="customer")c.unread=(c.unread||0)+1;persistChat(c);io.to(c._id).emit("message",msg);io.of("/agent").emit("chat:update",publicChat(c));}
 function publicChat(c){return {_id:c._id,name:c.name,phone:c.phone,bookingRef:c.bookingRef,bookingRefs:c.bookingRefs||(c.bookingRef?[c.bookingRef]:[]),unread:c.unread||0,updatedAt:c.updatedAt,messages:c.messages};}
 const agents=io.of("/agent");
 agents.use((socket,next)=>socket.handshake.auth?.password&&ADMIN_PASSWORD&&socket.handshake.auth.password===ADMIN_PASSWORD?next():next(new Error("Wrong password")));
@@ -102,7 +117,7 @@ async function replyWithAI(c) {
 }
 agents.on("connection",socket=>{
  socket.emit("chats",Array.from(chats.values()).map(publicChat));
- socket.on("chat:read",async chatId=>{const c=chats.get(chatId);if(c){c.unread=0;await persistChat(c);agents.emit("chat:update",publicChat(c));}});
+ socket.on("chat:read",async chatId=>{const c=chats.get(chatId);if(c){c.unread=0;let ch=false;c.messages.forEach(m=>{if(m.from==="customer"&&m.status!=="seen"){m.status="seen";m.seenAt=Date.now();ch=true;}});await persistChat(c);if(ch)io.to(c._id).emit("status",{from:"customer",status:"seen",at:Date.now()});agents.emit("chat:update",publicChat(c));}});
  socket.on("agent:reply",p=>{const c=chats.get(p?.chatId);const msg=clip(p?.text,2000);if(c&&msg){humanActivity.set(c._id,Date.now());push(c,{from:"agent",text:msg});}});
  socket.on("agent:stk-initiated",p=>{const c=chats.get(p?.chatId);if(c&&c.bookingRef){humanActivity.set(c._id,Date.now());push(c,{from:"agent",type:"status",text:"An authorized Mash Poa agent has confirmed that the M-Pesa STK Push was initiated. Please check your phone. This message does not itself confirm payment."});}});
  socket.on("agent:payment",p=>{const c=chats.get(p?.chatId);if(!c)return;Promise.all([one("settings",{_id:"global"}),Promise.all((c.bookingRefs&&c.bookingRefs.length?c.bookingRefs:[c.bookingRef]).map(r=>one("bookings",{ref:r})))]).then(([s,bs])=>{const pay=safePayment(s);if(!pay.number)return socket.emit("agent:error","Save the global payment number in Admin Settings first.");const amount=Number(p.amount)||bs.filter(x=>x&&x.status!=="paid").reduce((n,x)=>n+Number(x.amount||0),0);if(!amount)return socket.emit("agent:error","Enter the booking amount before sending payment details.");push(c,{from:"agent",type:"payment",payment:{...pay,amount,bookingRef:c.bookingRef},text:"Official payment instructions"});});});
@@ -110,7 +125,8 @@ agents.on("connection",socket=>{
 });
 io.on("connection",socket=>{
  socket.on("customer:start",async p=>{const phone=clip(p?.phone,20),name=clip(p?.name,100);if(!phone)return;let c=Array.from(chats.values()).find(x=>x.phone===phone&&x.bookingRef===clip(p?.bookingRef,40));if(!c){c={_id:id(),name:name||"Guest",phone,bookingRef:clip(p?.bookingRef,40),messages:[],unread:0,createdAt:Date.now(),updatedAt:Date.now()};chats.set(c._id,c);await persistChat(c);}socket.join(c._id);socket.emit("chat:ready",{chatId:c._id,messages:c.messages});});
- socket.on("customer:message",p=>{const c=chats.get(clip(p?.chatId,40));const message=clip(p?.text,1500);if(c&&message){push(c,{from:"customer",text:message});replyWithAI(c);}});
+ socket.on("customer:message",p=>{const c=chats.get(clip(p?.chatId,40));const message=clip(p?.text,1500);if(c&&message){push(c,{from:"customer",text:message,cid:clip(p?.cid,40)});replyWithAI(c);}});
+ socket.on("customer:seen",async chatId=>{const c=chats.get(clip(chatId,40));if(!c)return;let ch=false;c.messages.forEach(m=>{if(m.from!=="customer"&&m.status!=="seen"){m.status="seen";m.seenAt=Date.now();ch=true;}});if(ch){await persistChat(c);io.of("/agent").emit("chat:update",publicChat(c));}});
  socket.on("customer:booking",p=>{const c=chats.get(clip(p?.chatId,40));const ref=clip(p?.ref,40);if(c&&ref){c.bookingRef=ref;c.bookingRefs=[...new Set([...(c.bookingRefs||[]),ref])];push(c,{from:"customer",type:"booking",booking:{ref,from:clip(p.from,80),to:clip(p.to,80),date:clip(p.date,10),time:clip(p.time,10),seats:clip((p.seats||[]).join(", "),40),amount:Number(p.amount)||0},text:"Booking request "+ref});}});
 });
 // Every route is two-way: if A to B exists, B to A is created too (same fare, reversed stops, same departure times).
@@ -126,4 +142,6 @@ for(const r of (routeData.routes||[]).filter(x=>x.addition)){if(done.has(r._id))
 for(const s of (scheduleData.departures||[]).filter(x=>x.addition)){if(done.has(s._id))continue;if(!haveS.has(s._id)){await save("schedules",s);added++;}done.add(s._id);}
 if(added||done.size!==(seeded.ids||[]).length){await save("settings",{_id:"seeded",ids:[...done]});}if(added)console.log("Mash Poa added",added,"new catalogue items");console.log("Mash Poa catalogue loaded:",(await all("routes")).length,"routes and",(await all("schedules")).length,"departure templates");}catch(e){console.error("Mash Poa route/schedule seed failed:",e.message);}}
 (async()=>{if(process.env.MONGODB_URI){try{mongoClient=new MongoClient(process.env.MONGODB_URI,{serverSelectionTimeoutMS:10000});await mongoClient.connect();db=mongoClient.db(DB_NAME);console.log("Mash Poa database connected");}catch(e){console.error("MongoDB unavailable; running in memory until restart:",e.message);}}await seedRouteAndScheduleFiles();await ensureReverseRoutes();const savedAI=await one("settings",{_id:"ai"}); if(savedAI) aiConfig={enabled:!!savedAI.enabled,model:savedAI.model||aiConfig.model,notes:savedAI.notes||""}; await loadChats();server.listen(PORT,()=>console.log("Mash Poa listening on "+PORT));})();
+// Single-page app routes: reloading or opening a link to a results/checkout page must load the site, not "Cannot GET".
+app.get(/^\/(booking|checkout)(\/.*)?$/,(_req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 app.use((err,_req,res,_next)=>{console.error(err);res.status(500).json({ok:false,error:"Unexpected server error"});});
