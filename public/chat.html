@@ -73,15 +73,29 @@
     fit();
     const toEnd = () => { msgs.scrollTop = msgs.scrollHeight; };
 
-    /* ---- booking summary (collapsible so it never eats the screen) ---- */
+    /* ---- booking summary: open by default, folds away while typing ---- */
+    let sumOpen = true;
+    function setSum(open) {
+      sumOpen = open;
+      const full = $("sumfull"), bar = $("sumbar");
+      if (!full) return;
+      full.hidden = !open; bar.hidden = open;
+      setTimeout(fit, 0);
+    }
     if (legs.length) {
       const total = legs.reduce((n, l) => n + Number(l.amount || 0), 0), s = $("summary");
       s.hidden = false;
-      s.innerHTML = '<button type="button" class="sumbar" id="sumbar"><span>' + logo + '</span><span class="sumtxt"><b>Booking received · ' + ksh(total) + '</b><small>' + legs.map(l => esc(l.from) + " → " + esc(l.to)).join(" · ") + '</small></span><i id="chev">⌄</i></button>' +
-        '<div class="sumbody" id="sumbody" hidden>' +
-        legs.map((l, i) => '<div class="sum-line"><b>' + (legs.length > 1 ? (i ? "Return" : "Outbound") + " · " : "") + esc(l.from) + " → " + esc(l.to) + '</b><span>' + esc(l.date) + " · " + esc(l.time) + " · Seat " + esc((l.seats || []).join(", ")) + '</span><small>Ref ' + esc(l.ref) + " · " + ksh(l.amount) + '</small></div>').join("") +
-        '<p class="hint">An agent will send official payment details here. We never ask for your M-PESA PIN.</p></div>';
-      $("sumbar").onclick = () => { const b = $("sumbody"); b.hidden = !b.hidden; $("chev").textContent = b.hidden ? "⌄" : "⌃"; setTimeout(fit, 0); };
+      s.innerHTML =
+        '<div class="sumfull" id="sumfull">' +
+          '<div class="sum-top">' + logo + '<span class="pill">Booking received</span></div>' +
+          legs.map((l, i) => '<div class="sum-line"><b>' + (legs.length > 1 ? (i ? "Return" : "Outbound") + " · " : "") + esc(l.from) + " → " + esc(l.to) + '</b><span>' + esc(l.date) + " · " + esc(l.time) + " · Seat " + esc((l.seats || []).join(", ")) + '</span><small>Ref ' + esc(l.ref) + " · " + ksh(l.amount) + '</small></div>').join("") +
+          '<div class="sum-total"><span>Total to pay</span><b>' + ksh(total) + '</b></div>' +
+          '<p class="hint">An agent will send official payment details here. We never ask for your M-PESA PIN.</p>' +
+          '<button type="button" class="sumhide" id="sumhide">Hide details ⌃</button>' +
+        '</div>' +
+        '<button type="button" class="sumbar" id="sumbar" hidden><span>' + logo + '</span><span class="sumtxt"><b>Booking received · ' + ksh(total) + '</b><small>' + legs.map(l => esc(l.from) + " → " + esc(l.to)).join(" · ") + '</small></span><i>⌄</i></button>';
+      $("sumhide").onclick = () => setSum(false);
+      $("sumbar").onclick = () => setSum(true);
       $("name").value = saved.name || "";
       $("phone").value = saved.phone || "";
     }
@@ -99,6 +113,11 @@
     };
     function paint(el, m) {
       let body;
+      if (m.deleted) {
+        el.classList.add("gone");
+        el.innerHTML = '<span class="mt">🚫 This message was deleted</span><span class="mm">' + clock(m.at) + '</span>';
+        return;
+      }
       if (m.type === "payment" && m.payment) {
         const p = m.payment;
         el.classList.add("card-msg");
@@ -123,7 +142,8 @@
       } else {
         body = '<span class="mt">' + esc(m.text || "") + '</span>';
       }
-      el.innerHTML = body + '<span class="mm">' + clock(m.at) + (m.from === "customer" ? " " + stateHtml(m) : "") + '</span>';
+      const canDel = m.from === "customer" && !m.type && !m.pending && m.id;
+      el.innerHTML = body + '<span class="mm">' + clock(m.at) + (m.from === "customer" ? " " + stateHtml(m) : "") + '</span>' + (canDel ? '<button type="button" class="mdel" data-id="' + esc(m.id) + '">Delete message</button>' : "");
     }
     function bubble(m, fromSocket) {
       if (m.id && byId.has(m.id)) return;
@@ -138,6 +158,13 @@
       toEnd();
       if (fromSocket && m.from !== "customer") markSeen();
     }
+    msgs.addEventListener("click", e => {
+      const d = e.target.closest(".mdel");
+      if (d) { if (confirm("Delete this message for everyone?")) socket.emit("customer:delete-message", { chatId, id: d.dataset.id }); return; }
+      const b = e.target.closest(".m.out");
+      msgs.querySelectorAll(".m.sel").forEach(x => { if (x !== b) x.classList.remove("sel"); });
+      if (b && b.querySelector(".mdel")) b.classList.toggle("sel");
+    });
     function markSeen() { if (socket && chatId && document.visibilityState === "visible") socket.emit("customer:seen", chatId); }
     document.addEventListener("visibilitychange", markSeen);
 
@@ -151,7 +178,7 @@
       socket.on("connect_error", () => { $("status").textContent = "Connection problem. Retrying…"; });
       socket.on("chat:ready", d => {
         chatId = d.chatId;
-        $("greet").remove(); msgs.querySelectorAll(".m,.dday").forEach(n => n.remove()); byId.clear(); lastDay = "";
+        const g = $("greet"); if (g) g.remove(); msgs.querySelectorAll(".m,.dday").forEach(n => n.remove()); byId.clear(); lastDay = "";
         (d.messages || []).forEach(m => bubble(m, false));
         const sent = new Set((d.messages || []).filter(m => m.type === "booking").map(m => m.booking.ref));
         legs.forEach(l => { if (!sent.has(l.ref)) socket.emit("customer:booking", { chatId, ref: l.ref, from: l.from, to: l.to, date: l.date, time: l.time, seats: l.seats, amount: l.amount }); });
@@ -159,6 +186,15 @@
         fit(); markSeen();
       });
       socket.on("message", m => bubble(m, true));
+      socket.on("message:deleted", d => {
+        const h = byId.get(d.id); if (!h) return;
+        Object.keys(h.m).forEach(k => { if (!["id", "from", "at"].includes(k)) delete h.m[k]; });
+        h.m.deleted = true; paint(h.el, h.m); h.el.classList.remove("sel", "out"); h.el.classList.add("gone", h.m.from === "customer" ? "out" : "in");
+      });
+      socket.on("chat:cleared", () => {
+        msgs.querySelectorAll(".m,.dday").forEach(n => n.remove()); byId.clear(); byCid.clear(); lastDay = "";
+        const n = document.createElement("div"); n.className = "dday"; n.textContent = "Chat cleared by Mash Poa support"; msgs.appendChild(n);
+      });
       socket.on("status", d => {
         byId.forEach(({ el, m }) => { if (m.from === "customer" && m.status !== "seen") { m.status = "seen"; paint(el, m); } });
       });
@@ -174,7 +210,7 @@
       socket.emit("customer:message", { chatId, text, cid });
       $("text").value = ""; $("text").focus();
     };
-    $("text").addEventListener("focus", () => setTimeout(() => { fit(); toEnd(); }, 250));
+    $("text").addEventListener("focus", () => { if (legs.length && sumOpen) setSum(false); setTimeout(() => { fit(); toEnd(); }, 250); });
     if (legs.length && $("phone").value) start();
   })();
   </script>

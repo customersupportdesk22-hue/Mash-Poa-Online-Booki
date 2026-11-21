@@ -290,3 +290,21 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 .route-img{overflow:hidden}
 .route-img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .route-img .chip,.route-img span{position:relative;z-index:1}
+
+/* booking summary card (open by default) */
+.csum{max-height:46vh;overflow:auto}
+.sumfull{padding:14px 16px;background:#fff6f6}
+.sumfull[hidden]{display:none}
+.sum-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.sum-top .card-logo{height:34px;margin:0}
+.sum-total{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #f0c9c7;padding-top:10px;margin-top:4px;font-weight:700}
+.sum-total b{color:var(--red);font-size:20px}
+.sumfull .hint{margin:8px 0 0;color:var(--muted);font-size:12px}
+.sumhide{margin-top:8px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:700;padding:4px 0}
+.sumbar[hidden]{display:none}
+
+/* deleting messages */
+.m.gone{opacity:.65;font-style:italic}
+.m .mdel{display:none;margin-top:6px;border:0;background:#ffffff22;color:inherit;border-radius:8px;padding:5px 10px;font:inherit;font-size:12px;font-weight:700}
+.m.sel .mdel{display:inline-block}
+.m.out.sel{box-shadow:0 0 0 2px #e3221c55}
